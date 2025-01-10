@@ -11,19 +11,21 @@ import {csvDecodeRow} from 'app/common/csvFormat';
 import * as gristTypes from 'app/common/gristTypes';
 import {isFullReferencingType} from 'app/common/gristTypes';
 import * as gutil from 'app/common/gutil';
+import {isNonNullish} from 'app/common/gutil';
 import NumberParse from 'app/common/NumberParse';
 import {dateTimeWidgetOptions, guessDateFormat, timeFormatOptions} from 'app/common/parseDate';
 import {TableData} from 'app/common/TableData';
 import {decodeObject} from 'app/plugin/objtypes';
 
-interface ColInfo {
+interface PrepColInfo {
   type: string;
   isFormula: boolean;
-  formula: string;
+  formula?: string;
   visibleCol: number;
   widgetOptions?: string;
   rules: gristTypes.RefListValue
 }
+
 
 /**
  * Returns the suggested full type for `column` given a desired pure type to convert it to.
@@ -43,6 +45,25 @@ export function addColTypeSuffix(type: string, column: ColumnRec, docModel: DocM
     default:
       return type;
   }
+}
+
+/**
+ * Infers the suffix for a column type, based on the type of the column and the type to convert it to.
+ * Currently only used for Ref and RefList types, where the suffix is the tableId of the reference.
+ */
+export function inferColTypeSuffix(newPure: string, column: ColumnRec) {
+  // We can infer only for Ref and RefList types.
+  if (newPure !== "Ref" && newPure !== "RefList") {
+    return null;
+  }
+
+  // If the old type was also Ref/RefList, just return the tableId from the old type.
+  const existingTable = column.type.peek().split(':')[1];
+  const oldPure = gristTypes.extractTypeFromColType(column.type.peek());
+  if (existingTable && (oldPure === "Ref" || oldPure === "RefList")) {
+    return `${newPure}:${existingTable}`;
+  }
+  return null;
 }
 
 /**
@@ -84,8 +105,14 @@ function getRefTableIdFromData(docModel: DocModel, column: ColumnRec): string|nu
 // ColInfo to use for the transform column. Note that isFormula will be set to true, and formula
 // will be set to the expression to compute the new values from the old ones.
 // @param toTypeMaybeFull: Type to convert the column to, either full ('Ref:Foo') or pure ('Ref').
-export async function prepTransformColInfo(docModel: DocModel, origCol: ColumnRec, origDisplayCol: ColumnRec,
-                                           toTypeMaybeFull: string, convertedRef: string): Promise<ColInfo> {
+export async function prepTransformColInfo(options: {
+  docModel: DocModel;
+  origCol: ColumnRec;
+  origDisplayCol: ColumnRec;
+  toTypeMaybeFull: string;
+  convertedRef?: string
+}): Promise<PrepColInfo> {
+  const {docModel, origCol, origDisplayCol, toTypeMaybeFull, convertedRef} = options;
   const toType = gristTypes.extractTypeFromColType(toTypeMaybeFull);
   const tableData: TableData = docModel.docData.getTable(origCol.table().tableId())!;
 
@@ -114,7 +141,7 @@ export async function prepTransformColInfo(docModel: DocModel, origCol: ColumnRe
     }
   }
 
-  const colInfo: ColInfo = {
+  const colInfo: PrepColInfo = {
     type: addColTypeSuffix(toTypeMaybeFull, origCol, docModel),
     isFormula: true,
     visibleCol: 0,
@@ -123,70 +150,6 @@ export async function prepTransformColInfo(docModel: DocModel, origCol: ColumnRe
   };
 
   switch (toType) {
-    case 'Bool':
-      // Most types use a TextBox as the default widget.
-      // We don't want to reuse that for Toggle columns, which should be a CheckBox by default.
-      delete widgetOptions.widget;
-      break;
-    case 'Date':
-    case 'DateTime': {
-      let {dateFormat} = widgetOptions;
-      if (!dateFormat) {
-        // Guess date and time format if there aren't any already
-        const colValues = tableData.getColValues(sourceCol.colId()) || [];
-        dateFormat = guessDateFormat(colValues.map(String));
-        widgetOptions = {...widgetOptions, ...(dateTimeWidgetOptions(dateFormat, true))};
-      }
-      if (toType === 'DateTime' && !widgetOptions.timeFormat) {
-        // Ensure DateTime columns have a time format. This is needed when converting from a Date column.
-        widgetOptions.timeFormat = timeFormatOptions[0];
-        widgetOptions.isCustomTimeFormat = false;
-      }
-      break;
-    }
-    case 'Numeric':
-    case 'Int': {
-      if (!["Numeric", "Int"].includes(sourceCol.type())) {
-        const numberParse = NumberParse.fromSettings(docModel.docData.docSettings());
-        const colValues = tableData.getColValues(sourceCol.colId()) || [];
-        widgetOptions = {...widgetOptions, ...numberParse.guessOptions(colValues.filter(isString))};
-      }
-      break;
-    }
-    case 'Choice': {
-      // Use previous choices if they are set, e.g. if converting from ChoiceList
-      if (!Array.isArray(widgetOptions.choices)) {
-        // Set suggested choices. Limit to 100, since too many choices is more likely to cause
-        // trouble than desired behavior. For many choices, recommend using a Ref to helper table.
-        const columnData = tableData.getDistinctValues(sourceCol.colId(), 100);
-        if (columnData) {
-          columnData.delete("");
-          columnData.delete(null);
-          widgetOptions = {...widgetOptions, choices: Array.from(columnData, String)};
-        }
-      }
-      break;
-    }
-    case 'ChoiceList': {
-      // Use previous choices if they are set, e.g. if converting from Choice
-      if (!Array.isArray(widgetOptions.choices)) {
-        // Set suggested choices. This happens before the conversion to ChoiceList, so we do some
-        // light guessing for likely choices to suggest.
-        const choices = new Set<string>();
-        for (let value of tableData.getColValues(sourceCol.colId()) || []) {
-          if (value === null) { continue; }
-          value = String(decodeObject(value)).trim();
-          const tags: unknown[] = (value.startsWith('[') && gutil.safeJsonParse(value, null)) || csvDecodeRow(value);
-          for (const tag of tags) {
-            choices.add(String(tag).trim());
-            if (choices.size > 100) { break; }    // Don't suggest excessively many choices.
-          }
-        }
-        choices.delete("");
-        widgetOptions = {...widgetOptions, choices: Array.from(choices)};
-      }
-      break;
-    }
     case 'Ref':
     case 'RefList':
     {
@@ -225,6 +188,8 @@ export async function prepTransformColInfo(docModel: DocModel, origCol: ColumnRe
       colInfo.visibleCol = suggestedColRef;
       break;
     }
+    default:
+      widgetOptions = guessWidgetOptionsSync({docModel, origCol, toTypeMaybeFull, widgetOptions});
   }
 
   if (Object.keys(widgetOptions).length) {
@@ -232,6 +197,95 @@ export async function prepTransformColInfo(docModel: DocModel, origCol: ColumnRe
   }
   return colInfo;
 }
+
+/**
+ * Tries to guess widget options for a given column, based on the type it's being converted to.
+ * It works synchronously, so it can't reason about options that require async calls to the data-engine.
+ */
+export function guessWidgetOptionsSync(options: {
+  docModel: DocModel;
+  origCol: ColumnRec;
+  toTypeMaybeFull: string;
+  widgetOptions?: any;
+}): object {
+  const {docModel, origCol, toTypeMaybeFull} = options;
+  const toType = gristTypes.extractTypeFromColType(toTypeMaybeFull);
+  let widgetOptions = {...(options.widgetOptions ?? {})};
+  const tableData: TableData = docModel.docData.getTable(origCol.table().tableId())!;
+  const visibleCol = origCol.visibleColModel();
+  const sourceCol = visibleCol.getRowId() !== 0 ? visibleCol : origCol;
+  switch (toType) {
+    case 'Bool':
+      // Most types use a TextBox as the default widget.
+      // We don't want to reuse that for Toggle columns, which should be a CheckBox by default.
+      delete widgetOptions.widget;
+      break;
+    case 'Date':
+    case 'DateTime': {
+      let {dateFormat} = widgetOptions;
+      if (!dateFormat) {
+        // Guess date and time format if there aren't any already
+        const colValues = tableData.getColValues(sourceCol.colId()) || [];
+        const strValues = colValues.map(v => isNonNullish(v) ? String(v) : null);
+        dateFormat = guessDateFormat(strValues);
+        widgetOptions = {...widgetOptions, ...(dateTimeWidgetOptions(dateFormat, true))};
+      }
+      if (toType === 'DateTime' && !widgetOptions.timeFormat) {
+        // Ensure DateTime columns have a time format. This is needed when converting from a Date column.
+        widgetOptions.timeFormat = timeFormatOptions[0];
+        widgetOptions.isCustomTimeFormat = false;
+      }
+      break;
+    }
+    case 'Numeric':
+    case 'Int': {
+      if (!["Numeric", "Int"].includes(sourceCol.type())) {
+        const numberParse = NumberParse.fromSettings(docModel.docData.docSettings());
+        const colValues = tableData.getColValues(sourceCol.colId()) || [];
+        widgetOptions = {...widgetOptions, ...numberParse.guessOptions(colValues.filter(isString))};
+      }
+      break;
+    }
+    case 'Choice': {
+      // Use previous choices if they are set, e.g. if converting from ChoiceList
+      if (!Array.isArray(widgetOptions.choices)) {
+        // Set suggested choices. Limit to 100, since too many choices is more likely to cause
+        // trouble than desired behavior. For many choices, recommend using a Ref to helper table.
+        const columnData = tableData.getDistinctValues(sourceCol.colId(), 100);
+        if (columnData) {
+          const choices = Array.from(columnData).filter(isNonNullish)
+                                                .map(v => String(v).trim())
+                                                .filter(Boolean);
+          widgetOptions = {...widgetOptions, choices};
+        }
+      }
+      break;
+    }
+    case 'ChoiceList': {
+      // Use previous choices if they are set, e.g. if converting from Choice
+      if (!Array.isArray(widgetOptions.choices)) {
+        // Set suggested choices. This happens before the conversion to ChoiceList, so we do some
+        // light guessing for likely choices to suggest.
+        const choices = new Set<string>();
+        for (let value of tableData.getColValues(sourceCol.colId()) || []) {
+          if (value === null) { continue; }
+          value = String(decodeObject(value)).trim();
+          const tags: unknown[] = (value.startsWith('[') && gutil.safeJsonParse(value, null)) || csvDecodeRow(value);
+          for (const tag of tags) {
+            const choice = !tag ? '' : String(tag).trim();
+            if (choice === '') { continue; }
+            choices.add(choice);
+            if (choices.size > 100) { break; }    // Don't suggest excessively many choices.
+          }
+        }
+        widgetOptions = {...widgetOptions, choices: Array.from(choices)};
+      }
+      break;
+    }
+  }
+  return widgetOptions;
+}
+
 
 // Given the transformCol, calls (if needed) a user action to update its displayCol.
 export async function setDisplayFormula(

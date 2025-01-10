@@ -33,22 +33,17 @@ describe('RightPanel', function() {
     await gu.undo();
 
     // Add a custom section.
-    await gu.addNewSection('Custom', 'Table1');
+    await gu.addNewSection('Custom', 'Table1', { customWidget: /Custom URL/ });
     assert.isFalse(await gu.isSidePanelOpen('right'));
     await gu.undo();
 
     // Add a custom page.
-    await gu.addNewPage('Custom', 'Table1');
+    await gu.addNewPage('Custom', 'Table1', { customWidget: /Custom URL/ });
     assert.isFalse(await gu.isSidePanelOpen('right'));
     await gu.undo();
 
     // Now open the panel on the column tab.
-    const columnTab = async () => {
-      await gu.toggleSidePanel('right', 'open');
-      await driver.find('.test-right-tab-field').click();
-    };
-
-    await columnTab();
+    await gu.openColumnPanel();
 
     // Add a chart section.
     await gu.addNewSection('Chart', 'Table1');
@@ -56,7 +51,7 @@ describe('RightPanel', function() {
     assert.isTrue(await driver.find('.test-right-widget-title').isDisplayed());
     await gu.undo();
 
-    await columnTab();
+    await gu.openColumnPanel();
 
     // Add a chart page.
     await gu.addNewPage('Chart', 'Table1');
@@ -64,18 +59,18 @@ describe('RightPanel', function() {
     assert.isTrue(await driver.find('.test-right-widget-title').isDisplayed());
     await gu.undo();
 
-    await columnTab();
+    await gu.openColumnPanel();
 
     // Add a custom section.
-    await gu.addNewSection('Custom', 'Table1');
+    await gu.addNewSection('Custom', 'Table1', { customWidget: /Custom URL/ });
     assert.isTrue(await gu.isSidePanelOpen('right'));
     assert.isTrue(await driver.find('.test-right-widget-title').isDisplayed());
     await gu.undo();
 
-    await columnTab();
+    await gu.openColumnPanel();
 
     // Add a custom page.
-    await gu.addNewPage('Custom', 'Table1');
+    await gu.addNewPage('Custom', 'Table1', { customWidget: /Custom URL/ });
     assert.isTrue(await gu.isSidePanelOpen('right'));
     assert.isTrue(await driver.find('.test-right-widget-title').isDisplayed());
     await gu.undo();
@@ -245,7 +240,7 @@ describe('RightPanel', function() {
 
     // check that selector-of is present and that all selected section are listed
     assert.equal(await driver.find('.test-selector-for').isPresent(), true);
-    assert.deepEqual(await driver.findAll('.test-selector-for-entry', (e) => e.getText()), [
+    assert.deepEqual(await driver.findAll('.test-selector-for-entry', (e) => e.getText().then(s => s.split('\n')[0])), [
       "CITY",
       "COUNTRYLANGUAGE",
       "COUNTRY Card List",

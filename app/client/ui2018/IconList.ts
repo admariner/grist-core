@@ -4,6 +4,7 @@ export type IconName = "ChartArea" |
   "ChartKaplan" |
   "ChartLine" |
   "ChartPie" |
+  "TypeCalendar" |
   "TypeCard" |
   "TypeCardList" |
   "TypeCell" |
@@ -22,6 +23,7 @@ export type IconName = "ChartArea" |
   "FieldFunctionEqual" |
   "FieldInteger" |
   "FieldLink" |
+  "FieldMarkdown" |
   "FieldNumeric" |
   "FieldReference" |
   "FieldSpinner" |
@@ -48,11 +50,13 @@ export type IconName = "ChartArea" |
   "Chat" |
   "Code" |
   "Collapse" |
+  "Columns" |
   "Convert" |
   "Copy" |
   "CrossBig" |
   "CrossSmall" |
   "Database" |
+  "Desktop" |
   "Dots" |
   "Download" |
   "DragDrop" |
@@ -73,9 +77,11 @@ export type IconName = "ChartArea" |
   "FontItalic" |
   "FontStrikethrough" |
   "FontUnderline" |
+  "FormConfig" |
   "FunctionResult" |
   "GreenArrow" |
   "Grow" |
+  "Headband" |
   "Heart" |
   "Help" |
   "Home" |
@@ -93,6 +99,7 @@ export type IconName = "ChartArea" |
   "Message" |
   "Minimize" |
   "Minus" |
+  "Mobile" |
   "MobileChat" |
   "MobileChat2" |
   "NewNotification" |
@@ -101,6 +108,7 @@ export type IconName = "ChartArea" |
   "Page" |
   "PanelLeft" |
   "PanelRight" |
+  "Paragraph" |
   "Pencil" |
   "PinBig" |
   "PinSmall" |
@@ -112,6 +120,7 @@ export type IconName = "ChartArea" |
   "Public" |
   "PublicColor" |
   "PublicFilled" |
+  "Question" |
   "Redo" |
   "Remove" |
   "RemoveBig" |
@@ -122,15 +131,21 @@ export type IconName = "ChartArea" |
   "Robot" |
   "Script" |
   "Search" |
+  "Section" |
+  "Separator" |
   "Settings" |
   "Share" |
+  "Skip" |
   "Sort" |
   "Sparks" |
+  "Star" |
   "Tick" |
   "TickSolid" |
   "Undo" |
   "Validation" |
   "Video" |
+  "VideoPlay" |
+  "VideoPlay2" |
   "Warning" |
   "Widget" |
   "Wrap" |
@@ -152,6 +167,7 @@ export const IconList: IconName[] = ["ChartArea",
   "ChartKaplan",
   "ChartLine",
   "ChartPie",
+  "TypeCalendar",
   "TypeCard",
   "TypeCardList",
   "TypeCell",
@@ -170,6 +186,7 @@ export const IconList: IconName[] = ["ChartArea",
   "FieldFunctionEqual",
   "FieldInteger",
   "FieldLink",
+  "FieldMarkdown",
   "FieldNumeric",
   "FieldReference",
   "FieldSpinner",
@@ -196,11 +213,13 @@ export const IconList: IconName[] = ["ChartArea",
   "Chat",
   "Code",
   "Collapse",
+  "Columns",
   "Convert",
   "Copy",
   "CrossBig",
   "CrossSmall",
   "Database",
+  "Desktop",
   "Dots",
   "Download",
   "DragDrop",
@@ -221,9 +240,11 @@ export const IconList: IconName[] = ["ChartArea",
   "FontItalic",
   "FontStrikethrough",
   "FontUnderline",
+  "FormConfig",
   "FunctionResult",
   "GreenArrow",
   "Grow",
+  "Headband",
   "Heart",
   "Help",
   "Home",
@@ -241,6 +262,7 @@ export const IconList: IconName[] = ["ChartArea",
   "Message",
   "Minimize",
   "Minus",
+  "Mobile",
   "MobileChat",
   "MobileChat2",
   "NewNotification",
@@ -249,6 +271,7 @@ export const IconList: IconName[] = ["ChartArea",
   "Page",
   "PanelLeft",
   "PanelRight",
+  "Paragraph",
   "Pencil",
   "PinBig",
   "PinSmall",
@@ -260,6 +283,7 @@ export const IconList: IconName[] = ["ChartArea",
   "Public",
   "PublicColor",
   "PublicFilled",
+  "Question",
   "Redo",
   "Remove",
   "RemoveBig",
@@ -270,15 +294,21 @@ export const IconList: IconName[] = ["ChartArea",
   "Robot",
   "Script",
   "Search",
+  "Section",
+  "Separator",
   "Settings",
   "Share",
+  "Skip",
   "Sort",
   "Sparks",
+  "Star",
   "Tick",
   "TickSolid",
   "Undo",
   "Validation",
   "Video",
+  "VideoPlay",
+  "VideoPlay2",
   "Warning",
   "Widget",
   "Wrap",

@@ -1,9 +1,13 @@
+import {detectCurrentLang, makeT} from 'app/client/lib/localization';
+import {checkName} from 'app/client/lib/nameUtils';
 import {AppModel, reportError} from 'app/client/models/AppModel';
 import {urlState} from 'app/client/models/gristUrlState';
 import * as css from 'app/client/ui/AccountPageCss';
 import {ApiKey} from 'app/client/ui/ApiKey';
 import {AppHeader} from 'app/client/ui/AppHeader';
 import {buildChangePasswordDialog} from 'app/client/ui/ChangePasswordDialog';
+import {DeleteAccountDialog} from 'app/client/ui/DeleteAccountDialog';
+import {translateLocale} from 'app/client/ui/LanguageMenu';
 import {leftPanelBasic} from 'app/client/ui/LeftPanelCommon';
 import {MFAConfig} from 'app/client/ui/MFAConfig';
 import {pagePanels} from 'app/client/ui/PagePanels';
@@ -14,11 +18,10 @@ import {cssBreadcrumbs, separator} from 'app/client/ui2018/breadcrumbs';
 import {labeledSquareCheckbox} from 'app/client/ui2018/checkbox';
 import {cssLink} from 'app/client/ui2018/links';
 import {select} from 'app/client/ui2018/menus';
+import {getPageTitleSuffix} from 'app/common/gristUrls';
 import {getGristConfig} from 'app/common/urlUtils';
 import {FullUser} from 'app/common/UserAPI';
-import {detectCurrentLang, makeT} from 'app/client/lib/localization';
-import {translateLocale} from 'app/client/ui/LanguageMenu';
-import {Computed, Disposable, dom, domComputed, makeTestId, Observable, styled} from 'grainjs';
+import {Computed, Disposable, dom, domComputed, makeTestId, Observable, styled, subscribe} from 'grainjs';
 
 const testId = makeTestId('test-account-page-');
 const t = makeT('AccountPage');
@@ -27,6 +30,7 @@ const t = makeT('AccountPage');
  * Creates the account page where a user can manage their profile settings.
  */
 export class AccountPage extends Disposable {
+  private readonly _currentPage = Computed.create(this, urlState().state, (_use, s) => s.account);
   private _apiKey = Observable.create<string>(this, '');
   private _userObs = Observable.create<FullUser|null>(this, null);
   private _isEditingName = Observable.create(this, false);
@@ -37,6 +41,7 @@ export class AccountPage extends Disposable {
 
   constructor(private _appModel: AppModel) {
     super();
+    this._setPageTitle();
     this._fetchAll().catch(reportError);
   }
 
@@ -158,7 +163,10 @@ designed to ensure that you're the only person who can access your account, even
             inputArgs: [{size: '5'}], // Lower size so that input can shrink below ~152px.
           })
         )),
-      ),
+        !getGristConfig().canCloseAccount ? null : [
+            dom.create(DeleteAccountDialog, user),
+        ],
+),
       testId('body'),
     )));
   }
@@ -228,24 +236,19 @@ designed to ensure that you're the only person who can access your account, even
       testId('username-warning'),
     );
   }
+
+  private _setPageTitle() {
+    this.autoDispose(subscribe(this._currentPage, (_use, page): string => {
+      const suffix = getPageTitleSuffix(getGristConfig());
+      switch (page) {
+        case undefined:
+        case 'account': {
+          return document.title = `Account${suffix}`;
+        }
+      }
+    }));
+  }
 }
-
-/**
- * We allow alphanumeric characters and certain common whitelisted characters (except at the start),
- * plus everything non-ASCII (for non-English alphabets, which we want to allow but it's hard to be
- * more precise about what exactly to allow).
- */
-// eslint-disable-next-line no-control-regex
-const VALID_NAME_REGEXP = /^(\w|[^\u0000-\u007F])(\w|[- ./'"()]|[^\u0000-\u007F])*$/;
-
-/**
- * Test name against various rules to check if it is a valid username.
- */
-export function checkName(name: string): boolean {
-  return VALID_NAME_REGEXP.test(name);
-}
-
-
 
 const cssWarnings = styled(css.warning, `
   margin: -8px 0 0 110px;

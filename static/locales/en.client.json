@@ -41,7 +41,8 @@
         "When adding table rules, automatically add a rule to grant OWNER full access.": "When adding table rules, automatically add a rule to grant OWNER full access.",
         "Permission to edit document structure": "Permission to edit document structure",
         "This default should be changed if editors' access is to be limited. ": "This default should be changed if editors' access is to be limited. ",
-        "Allow editors to edit structure (e.g. modify and delete tables, columns, layouts), and to write formulas, which give access to all data regardless of read restrictions.": "Allow editors to edit structure (e.g. modify and delete tables, columns, layouts), and to write formulas, which give access to all data regardless of read restrictions."
+        "Allow editors to edit structure (e.g. modify and delete tables, columns, layouts), and to write formulas, which give access to all data regardless of read restrictions.": "Allow editors to edit structure (e.g. modify and delete tables, columns, layouts), and to write formulas, which give access to all data regardless of read restrictions.",
+        "Add Table-wide Rule": "Add Table-wide Rule"
     },
     "AccountPage": {
         "API": "API",
@@ -90,7 +91,8 @@
         "Action Log failed to load": "Action Log failed to load",
         "Column {{colId}} was subsequently removed in action #{{action.actionNum}}": "Column {{colId}} was subsequently removed in action #{{action.actionNum}}",
         "Table {{tableId}} was subsequently removed in action #{{actionNum}}": "Table {{tableId}} was subsequently removed in action #{{actionNum}}",
-        "This row was subsequently removed in action {{action.actionNum}}": "This row was subsequently removed in action {{action.actionNum}}"
+        "This row was subsequently removed in action {{action.actionNum}}": "This row was subsequently removed in action {{action.actionNum}}",
+        "All tables": "All tables"
     },
     "AddNewButton": {
         "Add New": "Add New"
@@ -116,7 +118,9 @@
         "Legacy": "Legacy",
         "Personal Site": "Personal Site",
         "Team Site": "Team Site",
-        "Grist Templates": "Grist Templates"
+        "Grist Templates": "Grist Templates",
+        "Billing Account": "Billing Account",
+        "Manage Team": "Manage Team"
     },
     "AppModel": {
         "This team site is suspended. Documents can be read, but not modified.": "This team site is suspended. Documents can be read, but not modified."
@@ -144,7 +148,8 @@
         "Comment": "Comment",
         "Copy": "Copy",
         "Cut": "Cut",
-        "Paste": "Paste"
+        "Paste": "Paste",
+        "Copy with headers": "Copy with headers"
     },
     "ChartView": {
         "Create separate series for each value of the selected column.": "Create separate series for each value of the selected column.",
@@ -198,7 +203,17 @@
         "Widget needs to {{read}} the current table.": "Widget needs to {{read}} the current table.",
         "Widget needs {{fullAccess}} to this document.": "Widget needs {{fullAccess}} to this document.",
         "{{wrongTypeCount}} non-{{columnType}} columns are not shown_one": "{{wrongTypeCount}} non-{{columnType}} column is not shown",
-        "{{wrongTypeCount}} non-{{columnType}} columns are not shown_other": "{{wrongTypeCount}} non-{{columnType}} columns are not shown"
+        "{{wrongTypeCount}} non-{{columnType}} columns are not shown_other": "{{wrongTypeCount}} non-{{columnType}} columns are not shown",
+        "Clear selection": "Clear selection",
+        "No {{columnType}} columns in table.": "No {{columnType}} columns in table.",
+        "ACCESS LEVEL": "ACCESS LEVEL",
+        "Accept": "Accept",
+        "Custom URL": "Custom URL",
+        "Developer:": "Developer:",
+        "Last updated:": "Last updated:",
+        "Missing description and author information.": "Missing description and author information.",
+        "Reject": "Reject",
+        "Widget": "Widget"
     },
     "DataTables": {
         "Click to copy": "Click to copy",
@@ -206,7 +221,13 @@
         "Duplicate Table": "Duplicate Table",
         "Raw Data Tables": "Raw Data Tables",
         "Table ID copied to clipboard": "Table ID copied to clipboard",
-        "You do not have edit access to this document": "You do not have edit access to this document"
+        "You do not have edit access to this document": "You do not have edit access to this document",
+        "Edit Record Card": "Edit Record Card",
+        "Record Card": "Record Card",
+        "Record Card Disabled": "Record Card Disabled",
+        "Remove Table": "Remove Table",
+        "Rename Table": "Rename Table",
+        "{{action}} Record Card": "{{action}} Record Card"
     },
     "DocHistory": {
         "Activity": "Activity",
@@ -215,7 +236,8 @@
         "Compare to Previous": "Compare to Previous",
         "Open Snapshot": "Open Snapshot",
         "Snapshots": "Snapshots",
-        "Snapshots are unavailable.": "Snapshots are unavailable."
+        "Snapshots are unavailable.": "Snapshots are unavailable.",
+        "Only owners have access to snapshots for documents with access rules.": "Only owners have access to snapshots for documents with access rules."
     },
     "DocMenu": {
         "(The organization needs a paid plan)": "(The organization needs a paid plan)",
@@ -256,7 +278,11 @@
         "Workspace not found": "Workspace not found",
         "You are on the {{siteName}} site. You also have access to the following sites:": "You are on the {{siteName}} site. You also have access to the following sites:",
         "You are on your personal site. You also have access to the following sites:": "You are on your personal site. You also have access to the following sites:",
-        "You may delete a workspace forever once it has no documents in it.": "You may delete a workspace forever once it has no documents in it."
+        "You may delete a workspace forever once it has no documents in it.": "You may delete a workspace forever once it has no documents in it.",
+        "Any documents created in this site will appear here.": "Any documents created in this site will appear here.",
+        "Create my first document": "Create my first document",
+        "You have read-only access to this site. Currently there are no documents.": "You have read-only access to this site. Currently there are no documents.",
+        "personal site": "personal site"
     },
     "DocPageModel": {
         "Add Empty Table": "Add Empty Table",
@@ -288,7 +314,47 @@
         "Document ID copied to clipboard": "Document ID copied to clipboard",
         "Ok": "OK",
         "Manage Webhooks": "Manage Webhooks",
-        "Webhooks": "Webhooks"
+        "Webhooks": "Webhooks",
+        "API Console": "API Console",
+        "API URL copied to clipboard": "API URL copied to clipboard",
+        "API console": "API console",
+        "API documentation.": "API documentation.",
+        "Base doc URL: {{docApiUrl}}": "Base doc URL: {{docApiUrl}}",
+        "Coming soon": "Coming soon",
+        "Copy to clipboard": "Copy to clipboard",
+        "Currency": "Currency",
+        "Data Engine": "Data Engine",
+        "Default for DateTime columns": "Default for DateTime columns",
+        "Document ID": "Document ID",
+        "Document ID to use whenever the REST API calls for {{docId}}. See {{apiURL}}": "Document ID to use whenever the REST API calls for {{docId}}. See {{apiURL}}",
+        "Find slow formulas": "Find slow formulas",
+        "For currency columns": "For currency columns",
+        "For number and date formats": "For number and date formats",
+        "Formula times": "Formula times",
+        "Hard reset of data engine": "Hard reset of data engine",
+        "ID for API use": "ID for API use",
+        "Locale": "Locale",
+        "Manage webhooks": "Manage webhooks",
+        "Notify other services on doc changes": "Notify other services on doc changes",
+        "Python": "Python",
+        "Python version used": "Python version used",
+        "Reload": "Reload",
+        "Time Zone": "Time Zone",
+        "Try API calls from the browser": "Try API calls from the browser",
+        "python2 (legacy)": "python2 (legacy)",
+        "python3 (recommended)": "python3 (recommended)",
+        "Cancel": "Cancel",
+        "Force reload the document while timing formulas, and show the result.": "Force reload the document while timing formulas, and show the result.",
+        "Formula timer": "Formula timer",
+        "Reload data engine": "Reload data engine",
+        "Reload data engine?": "Reload data engine?",
+        "Start timing": "Start timing",
+        "Stop timing...": "Stop timing...",
+        "Time reload": "Time reload",
+        "Timing is on": "Timing is on",
+        "You can make changes to the document, then stop timing to see the results.": "You can make changes to the document, then stop timing to see the results.",
+        "Only available to document editors": "Only available to document editors",
+        "Only available to document owners": "Only available to document owners"
     },
     "DocumentUsage": {
         "Attachments Size": "Size of Attachments",
@@ -396,7 +462,47 @@
         "Unfreeze {{count}} columns_one": "Unfreeze this column",
         "Unfreeze {{count}} columns_other": "Unfreeze {{count}} columns",
         "Insert column to the left": "Insert column to the left",
-        "Insert column to the right": "Insert column to the right"
+        "Insert column to the right": "Insert column to the right",
+        "Apply on record changes": "Apply on record changes",
+        "Apply to new records": "Apply to new records",
+        "Authorship": "Authorship",
+        "Created At": "Created At",
+        "Created By": "Created By",
+        "Hidden Columns": "Hidden Columns",
+        "Last Updated At": "Last Updated At",
+        "Last Updated By": "Last Updated By",
+        "Lookups": "Lookups",
+        "Shortcuts": "Shortcuts",
+        "Show hidden columns": "Show hidden columns",
+        "Timestamp": "Timestamp",
+        "no reference column": "no reference column",
+        "Adding UUID column": "Adding UUID column",
+        "Adding duplicates column": "Adding duplicates column",
+        "Detect Duplicates in...": "Detect Duplicates in...",
+        "Duplicate in {{- label}}": "Duplicate in {{- label}}",
+        "No reference columns.": "No reference columns.",
+        "Search columns": "Search columns",
+        "UUID": "UUID",
+        "Add column with type": "Add column with type",
+        "Add formula column": "Add formula column",
+        "Add column": "Add column",
+        "Created at": "Created at",
+        "Created by": "Created by",
+        "Detect duplicates in...": "Detect duplicates in...",
+        "Last updated at": "Last updated at",
+        "Last updated by": "Last updated by",
+        "Any": "Any",
+        "Numeric": "Numeric",
+        "Text": "Text",
+        "Integer": "Integer",
+        "Toggle": "Toggle",
+        "Date": "Date",
+        "DateTime": "DateTime",
+        "Choice": "Choice",
+        "Choice List": "Choice List",
+        "Reference": "Reference",
+        "Reference List": "Reference List",
+        "Attachment": "Attachment"
     },
     "GristDoc": {
         "Added new linked section to view {{viewName}}": "Added new linked section to view {{viewName}}",
@@ -426,7 +532,12 @@
         "personal site": "personal site",
         "{{signUp}} to save your work. ": "{{signUp}} to save your work. ",
         "Welcome to Grist, {{- name}}!": "Welcome to Grist, {{- name}}!",
-        "Welcome to {{- orgName}}": "Welcome to {{- orgName}}"
+        "Welcome to {{- orgName}}": "Welcome to {{- orgName}}",
+        "Sign in": "Sign in",
+        "To use Grist, please either sign up or sign in.": "To use Grist, please either sign up or sign in.",
+        "Visit our {{link}} to learn more about Grist.": "Visit our {{link}} to learn more about Grist.",
+        "Learn more in our {{helpCenterLink}}.": "Learn more in our {{helpCenterLink}}.",
+        "Only show documents": "Only show documents"
     },
     "HomeLeftPane": {
         "Access Details": "Access Details",
@@ -442,7 +553,9 @@
         "Trash": "Trash",
         "Workspace will be moved to Trash.": "Workspace will be moved to Trash.",
         "Workspaces": "Workspaces",
-        "Tutorial": "Tutorial"
+        "Tutorial": "Tutorial",
+        "Terms of service": "Terms of service",
+        "Grist Resources": "Grist Resources"
     },
     "Importer": {
         "Merge rows that match these fields:": "Merge rows that match these fields:",
@@ -493,7 +606,9 @@
         "You do not have write access to this site": "You do not have write access to this site",
         "Download full document and history": "Download full document and history",
         "Remove all data but keep the structure to use as a template": "Remove all data but keep the structure to use as a template",
-        "Remove document history (can significantly reduce file size)": "Remove document history (can significantly reduce file size)"
+        "Remove document history (can significantly reduce file size)": "Remove document history (can significantly reduce file size)",
+        "Download": "Download",
+        "Download document": "Download document"
     },
     "NotifyUI": {
         "Ask for help": "Ask for help",
@@ -509,7 +624,8 @@
     },
     "OnBoardingPopups": {
         "Finish": "Finish",
-        "Next": "Next"
+        "Next": "Next",
+        "Previous": "Previous"
     },
     "OpenVideoTour": {
         "Grist Video Tour": "Grist Video Tour",
@@ -581,7 +697,27 @@
         "WIDGET TITLE": "WIDGET TITLE",
         "Widget": "Widget",
         "You do not have edit access to this document": "You do not have edit access to this document",
-        "Add referenced columns": "Add referenced columns"
+        "Add referenced columns": "Add referenced columns",
+        "Reset form": "Reset form",
+        "Configuration": "Configuration",
+        "Default field value": "Default field value",
+        "Display button": "Display button",
+        "Enter text": "Enter text",
+        "Field rules": "Field rules",
+        "Field title": "Field title",
+        "Hidden field": "Hidden field",
+        "Layout": "Layout",
+        "Redirect automatically after submission": "Redirect automatically after submission",
+        "Redirection": "Redirection",
+        "Required field": "Required field",
+        "Submission": "Submission",
+        "Submit another response": "Submit another response",
+        "Submit button label": "Submit button label",
+        "Success text": "Success text",
+        "Table column name": "Table column name",
+        "Enter redirect URL": "Enter redirect URL",
+        "No field selected": "No field selected",
+        "Select a field in the form widget to configure.": "Select a field in the form widget to configure."
     },
     "RowContextMenu": {
         "Copy anchor link": "Copy anchor link",
@@ -590,7 +726,9 @@
         "Duplicate rows_other": "Duplicate rows",
         "Insert row": "Insert row",
         "Insert row above": "Insert row above",
-        "Insert row below": "Insert row below"
+        "Insert row below": "Insert row below",
+        "View as card": "View as card",
+        "Use as table headers": "Use as table headers"
     },
     "SelectionSummary": {
         "Copied to clipboard": "Copied to clipboard"
@@ -616,7 +754,12 @@
         "Unsaved": "Unsaved",
         "Work on a Copy": "Work on a Copy",
         "Share": "Share",
-        "Download...": "Download..."
+        "Download...": "Download...",
+        "Comma Separated Values (.csv)": "Comma Separated Values (.csv)",
+        "DOO Separated Values (.dsv)": "DOO Separated Values (.dsv)",
+        "Export as...": "Export as...",
+        "Microsoft Excel (.xlsx)": "Microsoft Excel (.xlsx)",
+        "Tab Separated Values (.tsv)": "Tab Separated Values (.tsv)"
     },
     "SiteSwitcher": {
         "Create new team site": "Create new team site",
@@ -653,10 +796,12 @@
         "TOOLS": "TOOLS",
         "Tour of this Document": "Tour of this Document",
         "Validate Data": "Validate Data",
-        "Settings": "Settings"
+        "Settings": "Settings",
+        "API Console": "API Console"
     },
     "TopBar": {
-        "Manage Team": "Manage Team"
+        "Manage Team": "Manage Team",
+        "Manage team": "Manage team"
     },
     "TriggerFormulas": {
         "Any field": "Any field",
@@ -718,7 +863,8 @@
         "Show raw data": "Show raw data",
         "Widget options": "Widget options",
         "Add to page": "Add to page",
-        "Collapse widget": "Collapse widget"
+        "Collapse widget": "Collapse widget",
+        "Create a form": "Create a form"
     },
     "ViewSectionMenu": {
         "(customized)": "(customized)",
@@ -794,7 +940,16 @@
         "There was an unknown error.": "There was an unknown error.",
         "You are now signed out.": "You are now signed out.",
         "You are signed in as {{email}}. You can sign in with a different account, or ask an administrator for access.": "You are signed in as {{email}}. You can sign in with a different account, or ask an administrator for access.",
-        "You do not have access to this organization's documents.": "You do not have access to this organization's documents."
+        "You do not have access to this organization's documents.": "You do not have access to this organization's documents.",
+        "Account deleted{{suffix}}": "Account deleted{{suffix}}",
+        "Sign up": "Sign up",
+        "Your account has been deleted.": "Your account has been deleted.",
+        "An unknown error occurred.": "An unknown error occurred.",
+        "Build your own form": "Build your own form",
+        "Form not found": "Form not found",
+        "Powered by": "Powered by",
+        "Failed to log in.{{separator}}Please try again or contact support.": "Failed to log in.{{separator}}Please try again or contact support.",
+        "Sign-in failed{{suffix}}": "Sign-in failed{{suffix}}"
     },
     "menus": {
         "* Workspaces are available on team plans. ": "* Workspaces are available on team plans. ",
@@ -811,12 +966,24 @@
         "Choice List": "Choice List",
         "Reference": "Reference",
         "Reference List": "Reference List",
-        "Attachment": "Attachment"
+        "Attachment": "Attachment",
+        "Search columns": "Search columns"
     },
     "modals": {
         "Cancel": "Cancel",
         "Ok": "OK",
-        "Save": "Save"
+        "Save": "Save",
+        "Are you sure you want to delete these records?": "Are you sure you want to delete these records?",
+        "Are you sure you want to delete this record?": "Are you sure you want to delete this record?",
+        "Delete": "Delete",
+        "Dismiss": "Dismiss",
+        "Don't ask again.": "Don't ask again.",
+        "Don't show again.": "Don't show again.",
+        "Don't show tips": "Don't show tips",
+        "Undo to restore": "Undo to restore",
+        "Got it": "Got it",
+        "Don't show again": "Don't show again",
+        "TIP": "TIP"
     },
     "pages": {
         "Duplicate Page": "Duplicate Page",
@@ -836,7 +1003,11 @@
     },
     "NTextBox": {
         "false": "false",
-        "true": "true"
+        "true": "true",
+        "Field Format": "Field Format",
+        "Lines": "Lines",
+        "Multi line": "Multi line",
+        "Single line": "Single line"
     },
     "ACLUsers": {
         "Example Users": "Example Users",
@@ -879,7 +1050,9 @@
         "Add conditional style": "Add conditional style",
         "Error in style rule": "Error in style rule",
         "Row Style": "Row Style",
-        "Rule must return True or False": "Rule must return True or False"
+        "Rule must return True or False": "Rule must return True or False",
+        "Conditional Style": "Conditional Style",
+        "IF...": "IF..."
     },
     "CurrencyPicker": {
         "Invalid currency": "Invalid currency"
@@ -914,7 +1087,8 @@
         "Mixed types": "Mixed types",
         "Revert field settings for {{colId}} to common": "Revert field settings for {{colId}} to common",
         "Save field settings for {{colId}} as common": "Save field settings for {{colId}} as common",
-        "Use separate field settings for {{colId}}": "Use separate field settings for {{colId}}"
+        "Use separate field settings for {{colId}}": "Use separate field settings for {{colId}}",
+        "Changing column type": "Changing column type"
     },
     "FieldEditor": {
         "It should be impossible to save a plain data value into a formula column": "It should be impossible to save a plain data value into a formula column",
@@ -938,7 +1112,12 @@
         "Currency": "Currency",
         "Decimals": "Decimals",
         "Default currency ({{defaultCurrency}})": "Default currency ({{defaultCurrency}})",
-        "Number Format": "Number Format"
+        "Number Format": "Number Format",
+        "Field Format": "Field Format",
+        "Spinner": "Spinner",
+        "Text": "Text",
+        "max": "max",
+        "min": "min"
     },
     "Reference": {
         "CELL FORMAT": "CELL FORMAT",
@@ -1016,7 +1195,30 @@
         "Anchor Links": "Anchor Links",
         "Custom Widgets": "Custom Widgets",
         "To make an anchor link that takes the user to a specific cell, click on a row and press {{shortcut}}.": "To make an anchor link that takes the user to a specific cell, click on a row and press {{shortcut}}.",
-        "You can choose one of our pre-made widgets or embed your own by providing its full URL.": "You can choose one of our pre-made widgets or embed your own by providing its full URL."
+        "You can choose one of our pre-made widgets or embed your own by providing its full URL.": "You can choose one of our pre-made widgets or embed your own by providing its full URL.",
+        "Calendar": "Calendar",
+        "Can't find the right columns? Click 'Change Widget' to select the table with events data.": "Can't find the right columns? Click 'Change Widget' to select the table with events data.",
+        "To configure your calendar, select columns for start": {
+            "end dates and event titles. Note each column's type.": "To configure your calendar, select columns for start/end dates and event titles. Note each column's type."
+        },
+        "A UUID is a randomly-generated string that is useful for unique identifiers and link keys.": "A UUID is a randomly-generated string that is useful for unique identifiers and link keys.",
+        "Lookups return data from related tables.": "Lookups return data from related tables.",
+        "Use reference columns to relate data in different tables.": "Use reference columns to relate data in different tables.",
+        "You can choose from widgets available to you in the dropdown, or embed your own by providing its full URL.": "You can choose from widgets available to you in the dropdown, or embed your own by providing its full URL.",
+        "Formulas support many Excel functions, full Python syntax, and include a helpful AI Assistant.": "Formulas support many Excel functions, full Python syntax, and include a helpful AI Assistant.",
+        "Build simple forms right in Grist and share in a click with our new widget. {{learnMoreButton}}": "Build simple forms right in Grist and share in a click with our new widget. {{learnMoreButton}}",
+        "Forms are here!": "Forms are here!",
+        "Learn more": "Learn more",
+        "These rules are applied after all column rules have been processed, if applicable.": "These rules are applied after all column rules have been processed, if applicable.",
+        "Example: {{example}}": "Example: {{example}}",
+        "Filter displayed dropdown values with a condition.": "Filter displayed dropdown values with a condition.",
+        "Community widgets are created and maintained by Grist community members.": "Community widgets are created and maintained by Grist community members.",
+        "Creates a reverse column in target table that can be edited from either end.": "Creates a reverse column in target table that can be edited from either end.",
+        "This limitation occurs when one end of a two-way reference is configured as a single Reference.": "This limitation occurs when one end of a two-way reference is configured as a single Reference.",
+        "To allow multiple assignments, change the type of the Reference column to Reference List.": "To allow multiple assignments, change the type of the Reference column to Reference List.",
+        "This limitation occurs when one column in a two-way reference has the Reference type.": "This limitation occurs when one column in a two-way reference has the Reference type.",
+        "To allow multiple assignments, change the referenced column's type to Reference List.": "To allow multiple assignments, change the referenced column's type to Reference List.",
+        "Two-way references are not currently supported for Formula or Trigger Formula columns": "Two-way references are not currently supported for Formula or Trigger Formula columns"
     },
     "DescriptionConfig": {
         "DESCRIPTION": "DESCRIPTION"
@@ -1050,7 +1252,22 @@
     },
     "WebhookPage": {
         "Clear Queue": "Clear Queue",
-        "Webhook Settings": "Webhook Settings"
+        "Webhook Settings": "Webhook Settings",
+        "Cleared webhook queue.": "Cleared webhook queue.",
+        "Columns to check when update (separated by ;)": "Columns to check when update (separated by ;)",
+        "Enabled": "Enabled",
+        "Event Types": "Event Types",
+        "Memo": "Memo",
+        "Name": "Name",
+        "Ready Column": "Ready Column",
+        "Removed webhook.": "Removed webhook.",
+        "Sorry, not all fields can be edited.": "Sorry, not all fields can be edited.",
+        "Status": "Status",
+        "URL": "URL",
+        "Webhook Id": "Webhook Id",
+        "Table": "Table",
+        "Filter for changes in these columns (semicolon-separated ids)": "Filter for changes in these columns (semicolon-separated ids)",
+        "Header Authorization": "Header Authorization"
     },
     "FormulaAssistant": {
         "Ask the bot.": "Ask the bot.",
@@ -1082,7 +1299,13 @@
         "Sign up for a free Grist account to start using the Formula AI Assistant.": "Sign up for a free Grist account to start using the Formula AI Assistant.",
         "There are some things you should know when working with me:": "There are some things you should know when working with me:",
         "What do you need help with?": "What do you need help with?",
-        "Formula AI Assistant is only available for logged in users.": "Formula AI Assistant is only available for logged in users."
+        "Formula AI Assistant is only available for logged in users.": "Formula AI Assistant is only available for logged in users.",
+        "For higher limits, contact the site owner.": "For higher limits, contact the site owner.",
+        "For higher limits, {{upgradeNudge}}.": "For higher limits, {{upgradeNudge}}.",
+        "You have used all available credits.": "You have used all available credits.",
+        "You have {{numCredits}} remaining credits.": "You have {{numCredits}} remaining credits.",
+        "upgrade to the Pro Team plan": "upgrade to the Pro Team plan",
+        "upgrade your plan": "upgrade your plan"
     },
     "GridView": {
         "Click to insert": "Click to insert"
@@ -1154,7 +1377,9 @@
         "Opt in to Telemetry": "Opt in to Telemetry",
         "Opted In": "Opted In",
         "Support Grist": "Support Grist",
-        "Support Grist page": "Support Grist page"
+        "Support Grist page": "Support Grist page",
+        "Thank you! Your trust and support is greatly appreciated. Opt out any time from the {{link}} in the user menu.": "Thank you! Your trust and support is greatly appreciated. Opt out any time from the {{link}} in the user menu.",
+        "Admin Panel": "Admin Panel"
     },
     "SupportGristPage": {
         "GitHub": "GitHub",
@@ -1172,7 +1397,8 @@
         "We only collect usage statistics, as detailed in our {{link}}, never document contents.": "We only collect usage statistics, as detailed in our {{link}}, never document contents.",
         "You can opt out of telemetry at any time from this page.": "You can opt out of telemetry at any time from this page.",
         "You have opted in to telemetry. Thank you!": "You have opted in to telemetry. Thank you!",
-        "You have opted out of telemetry.": "You have opted out of telemetry."
+        "You have opted out of telemetry.": "You have opted out of telemetry.",
+        "Sponsor": "Sponsor"
     },
     "buildViewSectionDom": {
         "No data": "No data",
@@ -1185,5 +1411,420 @@
     "FloatingPopup": {
         "Maximize": "Maximize",
         "Minimize": "Minimize"
+    },
+    "CardContextMenu": {
+        "Copy anchor link": "Copy anchor link",
+        "Delete card": "Delete card",
+        "Duplicate card": "Duplicate card",
+        "Insert card": "Insert card",
+        "Insert card above": "Insert card above",
+        "Insert card below": "Insert card below"
+    },
+    "HiddenQuestionConfig": {
+        "Hidden fields": "Hidden fields"
+    },
+    "WelcomeCoachingCall": {
+        "free coaching call": "free coaching call",
+        "Maybe Later": "Maybe Later",
+        "On the call, we'll take the time to understand your needs and tailor the call to you. We can show you the Grist basics, or start working with your data right away to build the dashboards you need.": "On the call, we'll take the time to understand your needs and tailor the call to you. We can show you the Grist basics, or start working with your data right away to build the dashboards you need.",
+        "Schedule Call": "Schedule Call",
+        "Schedule your {{freeCoachingCall}} with a member of our team.": "Schedule your {{freeCoachingCall}} with a member of our team."
+    },
+    "FormView": {
+        "Publish": "Publish",
+        "Publish your form?": "Publish your form?",
+        "Unpublish": "Unpublish",
+        "Unpublish your form?": "Unpublish your form?",
+        "Anyone with the link below can see the empty form and submit a response.": "Anyone with the link below can see the empty form and submit a response.",
+        "Are you sure you want to reset your form?": "Are you sure you want to reset your form?",
+        "Code copied to clipboard": "Code copied to clipboard",
+        "Copy code": "Copy code",
+        "Copy link": "Copy link",
+        "Embed this form": "Embed this form",
+        "Link copied to clipboard": "Link copied to clipboard",
+        "Preview": "Preview",
+        "Reset": "Reset",
+        "Reset form": "Reset form",
+        "Save your document to publish this form.": "Save your document to publish this form.",
+        "Share": "Share",
+        "Share this form": "Share this form",
+        "View": "View"
+    },
+    "Editor": {
+        "Delete": "Delete"
+    },
+    "Menu": {
+        "Building blocks": "Building blocks",
+        "Columns": "Columns",
+        "Copy": "Copy",
+        "Cut": "Cut",
+        "Insert question above": "Insert question above",
+        "Insert question below": "Insert question below",
+        "Paragraph": "Paragraph",
+        "Paste": "Paste",
+        "Separator": "Separator",
+        "Unmapped fields": "Unmapped fields",
+        "Header": "Header"
+    },
+    "UnmappedFieldsConfig": {
+        "Clear": "Clear",
+        "Map fields": "Map fields",
+        "Mapped": "Mapped",
+        "Select All": "Select All",
+        "Unmap fields": "Unmap fields",
+        "Unmapped": "Unmapped"
+    },
+    "FormConfig": {
+        "Field rules": "Field rules",
+        "Required field": "Required field",
+        "Ascending": "Ascending",
+        "Default": "Default",
+        "Descending": "Descending",
+        "Field Format": "Field Format",
+        "Field Rules": "Field Rules",
+        "Horizontal": "Horizontal",
+        "Options Alignment": "Options Alignment",
+        "Options Sort Order": "Options Sort Order",
+        "Radio": "Radio",
+        "Select": "Select",
+        "Vertical": "Vertical"
+    },
+    "CustomView": {
+        "Some required columns aren't mapped": "Some required columns aren't mapped",
+        "To use this widget, please map all non-optional columns from the creator panel on the right.": "To use this widget, please map all non-optional columns from the creator panel on the right."
+    },
+    "FormContainer": {
+        "Build your own form": "Build your own form",
+        "Powered by": "Powered by"
+    },
+    "FormErrorPage": {
+        "Error": "Error"
+    },
+    "FormModel": {
+        "Oops! The form you're looking for doesn't exist.": "Oops! The form you're looking for doesn't exist.",
+        "Oops! This form is no longer published.": "Oops! This form is no longer published.",
+        "There was a problem loading the form.": "There was a problem loading the form.",
+        "You don't have access to this form.": "You don't have access to this form."
+    },
+    "FormPage": {
+        "There was an error submitting your form. Please try again.": "There was an error submitting your form. Please try again."
+    },
+    "FormSuccessPage": {
+        "Form Submitted": "Form Submitted",
+        "Thank you! Your response has been recorded.": "Thank you! Your response has been recorded.",
+        "Submit new response": "Submit new response"
+    },
+    "DateRangeOptions": {
+        "Last 30 days": "Last 30 days",
+        "Last 7 days": "Last 7 days",
+        "Last Week": "Last Week",
+        "Next 7 days": "Next 7 days",
+        "This month": "This month",
+        "This week": "This week",
+        "This year": "This year",
+        "Today": "Today"
+    },
+    "MappedFieldsConfig": {
+        "Clear": "Clear",
+        "Map fields": "Map fields",
+        "Mapped": "Mapped",
+        "Select All": "Select All",
+        "Unmap fields": "Unmap fields",
+        "Unmapped": "Unmapped"
+    },
+    "Section": {
+        "Insert section above": "Insert section above",
+        "Insert section below": "Insert section below"
+    },
+    "CreateTeamModal": {
+        "Cancel": "Cancel",
+        "Choose a name and url for your team site": "Choose a name and url for your team site",
+        "Create site": "Create site",
+        "Domain name is invalid": "Domain name is invalid",
+        "Domain name is required": "Domain name is required",
+        "Go to your site": "Go to your site",
+        "Team name": "Team name",
+        "Team name is required": "Team name is required",
+        "Team site created": "Team site created",
+        "Team url": "Team url",
+        "Work as a Team": "Work as a Team",
+        "Billing is not supported in grist-core": "Billing is not supported in grist-core"
+    },
+    "AdminPanel": {
+        "Admin Panel": "Admin Panel",
+        "Current": "Current",
+        "Current version of Grist": "Current version of Grist",
+        "Help us make Grist better": "Help us make Grist better",
+        "Home": "Home",
+        "Sponsor": "Sponsor",
+        "Support Grist": "Support Grist",
+        "Support Grist Labs on GitHub": "Support Grist Labs on GitHub",
+        "Telemetry": "Telemetry",
+        "Version": "Version",
+        "Auto-check when this page loads": "Auto-check when this page loads",
+        "Check now": "Check now",
+        "Checking for updates...": "Checking for updates...",
+        "Error": "Error",
+        "Error checking for updates": "Error checking for updates",
+        "Grist allows for very powerful formulas, using Python. We recommend setting the environment variable GRIST_SANDBOX_FLAVOR to gvisor if your hardware supports it (most will), to run formulas in each document within a sandbox isolated from other documents and isolated from the network.": "Grist allows for very powerful formulas, using Python. We recommend setting the environment variable GRIST_SANDBOX_FLAVOR to gvisor if your hardware supports it (most will), to run formulas in each document within a sandbox isolated from other documents and isolated from the network.",
+        "Grist signs user session cookies with a secret key. Please set this key via the environment variable GRIST_SESSION_SECRET. Grist falls back to a hard-coded default when it is not set. We may remove this notice in the future since session IDs have been updated to be inherently cryptographically secure.": "Grist signs user session cookies with a secret key. Please set this key via the environment variable GRIST_SESSION_SECRET. Grist falls back to a hard-coded default when it is not set. We may remove this notice in the future as session IDs generated since v1.1.16 are inherently cryptographically secure.",
+        "Grist is up to date": "Grist is up to date",
+        "Grist releases are at ": "Grist releases are at ",
+        "Last checked {{time}}": "Last checked {{time}}",
+        "Learn more.": "Learn more.",
+        "Newer version available": "Newer version available",
+        "No information available": "No information available",
+        "OK": "OK",
+        "Sandbox settings for data engine": "Sandbox settings for data engine",
+        "Sandboxing": "Sandboxing",
+        "Security Settings": "Security Settings",
+        "Updates": "Updates",
+        "unconfigured": "unconfigured",
+        "unknown": "unknown",
+        "Administrator Panel Unavailable": "Administrator Panel Unavailable",
+        "Authentication": "Authentication",
+        "Check failed.": "Check failed.",
+        "Check succeeded.": "Check succeeded.",
+        "Current authentication method": "Current authentication method",
+        "Details": "Details",
+        "Grist allows different types of authentication to be configured, including SAML and OIDC.     We recommend enabling one of these if Grist is accessible over the network or being made available     to multiple people.": "Grist allows different types of authentication to be configured, including SAML and OIDC.     We recommend enabling one of these if Grist is accessible over the network or being made available     to multiple people.",
+        "No fault detected.": "No fault detected.",
+        "Notes": "Notes",
+        "Or, as a fallback, you can set: {{bootKey}} in the environment and visit: {{url}}": "Or, as a fallback, you can set: {{bootKey}} in the environment and visit: {{url}}",
+        "Results": "Results",
+        "Self Checks": "Self Checks",
+        "You do not have access to the administrator panel.\nPlease log in as an administrator.": "You do not have access to the administrator panel.\nPlease log in as an administrator.",
+        "Grist allows different types of authentication to be configured, including SAML and OIDC. We recommend enabling one of these if Grist is accessible over the network or being made available to multiple people.": "Grist allows different types of authentication to be configured, including SAML and OIDC. We recommend enabling one of these if Grist is accessible over the network or being made available to multiple people.",
+        "Grist signs user session cookies with a secret key. Please set this key via the environment variable GRIST_SESSION_SECRET. Grist falls back to a hard-coded default when it is not set. We may remove this notice in the future as session IDs generated since v1.1.16 are inherently cryptographically secure.": "Grist signs user session cookies with a secret key. Please set this key via the environment variable GRIST_SESSION_SECRET. Grist falls back to a hard-coded default when it is not set. We may remove this notice in the future as session IDs generated since v1.1.16 are inherently cryptographically secure.",
+        "Key to sign sessions with": "Key to sign sessions with",
+        "Session Secret": "Session Secret",
+        "Enable Grist Enterprise": "Enable Grist Enterprise",
+        "Enterprise": "Enterprise",
+        "checking": "checking",
+        "Audit Logs": "Audit Logs",
+        "Contact us": "Contact us",
+        "Log Streaming": "Log Streaming",
+        "New, Enterprise": "New, Enterprise",
+        "Off": "Off",
+        "{{firstDestinationName}} + {{- remainingDestinationsCount}} more": "{{firstDestinationName}} + {{- remainingDestinationsCount}} more"
+    },
+    "Columns": {
+        "Remove Column": "Remove Column"
+    },
+    "Field": {
+        "No choices configured": "No choices configured",
+        "No values in show column of referenced table": "No values in show column of referenced table"
+    },
+    "Toggle": {
+        "Checkbox": "Checkbox",
+        "Field Format": "Field Format",
+        "Switch": "Switch"
+    },
+    "ChoiceEditor": {
+        "Error in dropdown condition": "Error in dropdown condition",
+        "No choices matching condition": "No choices matching condition",
+        "No choices to select": "No choices to select"
+    },
+    "ChoiceListEditor": {
+        "Error in dropdown condition": "Error in dropdown condition",
+        "No choices matching condition": "No choices matching condition",
+        "No choices to select": "No choices to select"
+    },
+    "DropdownConditionConfig": {
+        "Dropdown Condition": "Dropdown Condition",
+        "Invalid columns: {{colIds}}": "Invalid columns: {{colIds}}",
+        "Set dropdown condition": "Set dropdown condition"
+    },
+    "DropdownConditionEditor": {
+        "Enter condition.": "Enter condition."
+    },
+    "ReferenceUtils": {
+        "Error in dropdown condition": "Error in dropdown condition",
+        "No choices matching condition": "No choices matching condition",
+        "No choices to select": "No choices to select"
+    },
+    "FormRenderer": {
+        "Reset": "Reset",
+        "Search": "Search",
+        "Select...": "Select...",
+        "Submit": "Submit"
+    },
+    "widgetTypesMap": {
+        "Calendar": "Calendar",
+        "Card": "Card",
+        "Card List": "Card List",
+        "Chart": "Chart",
+        "Custom": "Custom",
+        "Form": "Form",
+        "Table": "Table"
+    },
+    "TimingPage": {
+        "Average Time (s)": "Average Time (s)",
+        "Column ID": "Column ID",
+        "Formula timer": "Formula timer",
+        "Loading timing data. Don't close this tab.": "Loading timing data. Don't close this tab.",
+        "Max Time (s)": "Max Time (s)",
+        "Number of Calls": "Number of Calls",
+        "Table ID": "Table ID",
+        "Total Time (s)": "Total Time (s)"
+    },
+    "DocTutorial": {
+        "Click to expand": "Click to expand",
+        "Do you want to restart the tutorial? All progress will be lost.": "Do you want to restart the tutorial? All progress will be lost.",
+        "End tutorial": "End tutorial",
+        "Finish": "Finish",
+        "Next": "Next",
+        "Previous": "Previous",
+        "Restart": "Restart"
+    },
+    "OnboardingCards": {
+        "3 minute video tour": "3 minute video tour",
+        "Complete our basics tutorial": "Complete our basics tutorial",
+        "Complete the tutorial": "Complete the tutorial",
+        "Learn the basic of reference columns, linked widgets, column types, & cards.": "Learn the basic of reference columns, linked widgets, column types, & cards.",
+        "Learn the basics of reference columns, linked widgets, column types, & cards.": "Learn the basics of reference columns, linked widgets, column types, & cards."
+    },
+    "OnboardingPage": {
+        "Back": "Back",
+        "Discover Grist in 3 minutes": "Discover Grist in 3 minutes",
+        "Go hands-on with the Grist Basics tutorial": "Go hands-on with the Grist Basics tutorial",
+        "Go to the tutorial!": "Go to the tutorial!",
+        "Next step": "Next step",
+        "Skip step": "Skip step",
+        "Skip tutorial": "Skip tutorial",
+        "Tell us who you are": "Tell us who you are",
+        "Type here": "Type here",
+        "Welcome": "Welcome",
+        "What brings you to Grist (you can select multiple)?": "What brings you to Grist (you can select multiple)?",
+        "What is your role?": "What is your role?",
+        "What organization are you with?": "What organization are you with?",
+        "Your organization": "Your organization",
+        "Your role": "Your role"
+    },
+    "ToggleEnterpriseWidget": {
+        "An activation key is used to run Grist Enterprise after a trial period\nof 30 days has expired. Get an activation key by [signing up for Grist\nEnterprise]({{signupLink}}). You do not need an activation key to run\nGrist Core.\n\nLearn more in our [Help Center]({{helpCenter}}).": "An activation key is used to run Grist Enterprise after a trial period\nof 30 days has expired. Get an activation key by [signing up for Grist\nEnterprise]({{signupLink}}). You do not need an activation key to run\nGrist Core.\n\nLearn more in our [Help Center]({{helpCenter}}).",
+        "Disable Grist Enterprise": "Disable Grist Enterprise",
+        "Enable Grist Enterprise": "Enable Grist Enterprise",
+        "Grist Enterprise is **enabled**.": "Grist Enterprise is **enabled**.",
+        "An activation key is used to run Grist Enterprise after a trial period\nof 30 days has expired. Get an activation key by [contacting us]({{contactLink}}) today. You do\nnot need an activation key to run Grist Core.\n\nLearn more in our [Help Center]({{helpCenter}}).": "An activation key is used to run Grist Enterprise after a trial period\nof 30 days has expired. Get an activation key by [contacting us]({{contactLink}}) today. You do\nnot need an activation key to run Grist Core.\n\nLearn more in our [Help Center]({{helpCenter}})."
+    },
+    "ViewLayout": {
+        "Delete": "Delete",
+        "Delete data and this widget.": "Delete data and this widget.",
+        "Keep data and delete widget. Table will remain available in {{rawDataLink}}": "Keep data and delete widget. Table will remain available in {{rawDataLink}}",
+        "Table {{tableName}} will no longer be visible": "Table {{tableName}} will no longer be visible",
+        "raw data page": "raw data page"
+    },
+    "AdminPanelName": {
+        "Admin Panel": "Admin Panel"
+    },
+    "CustomWidgetGallery": {
+        "(Missing info)": "(Missing info)",
+        "Add Widget": "Add Widget",
+        "Add Your Own Widget": "Add Your Own Widget",
+        "Add a widget from outside this gallery.": "Add a widget from outside this gallery.",
+        "Cancel": "Cancel",
+        "Change Widget": "Change Widget",
+        "Choose Custom Widget": "Choose Custom Widget",
+        "Community Widget": "Community Widget",
+        "Custom URL": "Custom URL",
+        "Developer:": "Developer:",
+        "Grist Widget": "Grist Widget",
+        "Last updated:": "Last updated:",
+        "Learn more about Custom Widgets": "Learn more about Custom Widgets",
+        "No matching widgets": "No matching widgets",
+        "Search": "Search",
+        "Widget URL": "Widget URL"
+    },
+    "markdown": {
+        "# New Markdown Function\n *\n *      We can _write_ [the usual Markdown](https:": {
+            "": {
+                "markdownguide.org) *inside*\n *      a Grainjs element.": "# New Markdown Function\n *\n *      We can _write_ [the usual Markdown](https://markdownguide.org) *inside*\n *      a Grainjs element."
+            }
+        },
+        "The toggle is **off**": "The toggle is **off**",
+        "The toggle is **on**": "The toggle is **on**"
+    },
+    "markdown.d": {
+        "# New Markdown Function\n *\n *      We can _write_ [the usual Markdown](https:": {
+            "": {
+                "markdownguide.org) *inside*\n *      a Grainjs element.": "# New Markdown Function\n *\n *      We can _write_ [the usual Markdown](https://markdownguide.org) *inside*\n *      a Grainjs element."
+            }
+        },
+        "The toggle is **off**": "The toggle is **off**",
+        "The toggle is **on**": "The toggle is **on**"
+    },
+    "HomeIntroCards": {
+        "3 minute video tour": "3 minute video tour",
+        "Blank document": "Blank document",
+        "Find solutions and explore more resources {{helpCenterLink}}": "Find solutions and explore more resources {{helpCenterLink}}",
+        "Finish our basics tutorial": "Finish our basics tutorial",
+        "Help center": "Help center",
+        "Import file": "Import file",
+        "Learn more {{webinarsLinks}}": "Learn more {{webinarsLinks}}",
+        "Start a new document": "Start a new document",
+        "Templates": "Templates",
+        "Tutorial": "Tutorial",
+        "Webinars": "Webinars"
+    },
+    "ReverseReferenceConfig": {
+        "Add two-way reference": "Add two-way reference",
+        "Column": "Column",
+        "Delete": "Delete",
+        "Delete column {{column}} in table {{table}}?": "Delete column {{column}} in table {{table}}?",
+        "It is the reverse of the reference column {{column}} in table {{table}}.": "It is the reverse of the reference column {{column}} in table {{table}}.",
+        "Table": "Table",
+        "Two-way Reference": "Two-way Reference",
+        "Delete two-way reference?": "Delete two-way reference?",
+        "Target table": "Target table"
+    },
+    "SupportGristButton": {
+        "Admin Panel": "Admin Panel",
+        "Close": "Close",
+        "Help Center": "Help Center",
+        "Opt in to Telemetry": "Opt in to Telemetry",
+        "Opted In": "Opted In",
+        "Support Grist": "Support Grist",
+        "Thank you! Your trust and support is greatly appreciated. Opt out any time from the {{link}} in the user menu.": "Thank you! Your trust and support is greatly appreciated. Opt out any time from the {{link}} in the user menu."
+    },
+    "buildReassignModal": {
+        "Cancel": "Cancel",
+        "Each {{targetTable}} record may only be assigned to a single {{sourceTable}} record.": "Each {{targetTable}} record may only be assigned to a single {{sourceTable}} record.",
+        "Reassign": "Reassign",
+        "Reassign to new {{sourceTable}} records.": "Reassign to new {{sourceTable}} records.",
+        "Reassign to {{sourceTable}} record {{sourceName}}.": "Reassign to {{sourceTable}} record {{sourceName}}.",
+        "Record already assigned_one": "Record already assigned",
+        "Record already assigned_other": "Record already assigned",
+        "{{targetTable}} record {{targetName}} is already assigned to {{sourceTable}} record          {{oldSourceName}}.": "{{targetTable}} record {{targetName}} is already assigned to {{sourceTable}} record          {{oldSourceName}}."
+    },
+    "AuditLogStreamingConfig": {
+        "Add destination": "Add destination",
+        "Add streaming destination": "Add streaming destination",
+        "Are you sure you want to delete this streaming destination? This action cannot be undone.": "Are you sure you want to delete this streaming destination? This action cannot be undone.",
+        "Cancel": "Cancel",
+        "Delete": "Delete",
+        "Delete streaming destination?": "Delete streaming destination?",
+        "Destination": "Destination",
+        "Destinations": "Destinations",
+        "Edit": "Edit",
+        "Edit streaming destination": "Edit streaming destination",
+        "Enter URL": "Enter URL",
+        "Enter token": "Enter token",
+        "Learn more": "Learn more",
+        "Other": "Other",
+        "Save": "Save",
+        "Splunk": "Splunk",
+        "Start streaming": "Start streaming",
+        "Token": "Token",
+        "URL": "URL"
+    },
+    "AuditLogsPage": {
+        "Audit Logs": "Audit Logs",
+        "Audit logs for {{siteName}}": "Audit logs for {{siteName}}",
+        "Contact us": "Contact us",
+        "Home": "Home",
+        "Log streaming": "Log streaming",
+        "Only site owners may access audit logs.": "Only site owners may access audit logs.",
+        "upgrade your plan": "upgrade your plan"
     }
 }

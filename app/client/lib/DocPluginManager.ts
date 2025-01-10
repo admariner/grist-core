@@ -13,15 +13,28 @@ export class DocPluginManager {
 
   public pluginsList: PluginInstance[];
 
-  constructor(localPlugins: LocalPlugin[], private _untrustedContentOrigin: string, private _docComm: ActiveDocAPI,
-              private _clientScope: ClientScope) {
+  private _clientScope = this._options.clientScope;
+  private _docComm = this._options.docComm;
+  private _localPlugins = this._options.plugins;
+  private _untrustedContentOrigin = this._options.untrustedContentOrigin;
+
+  constructor(private _options: {
+    plugins: LocalPlugin[],
+    untrustedContentOrigin: string,
+    docComm: ActiveDocAPI,
+    clientScope: ClientScope,
+  }) {
     this.pluginsList = [];
-    for (const plugin of localPlugins) {
+    for (const plugin of this._localPlugins) {
       try {
         const pluginInstance = new PluginInstance(plugin, createRpcLogger(console, `PLUGIN ${plugin.id}:`));
         const components = plugin.manifest.components || {};
-        const safeBrowser = pluginInstance.safeBrowser = new SafeBrowser(pluginInstance,
-          this._clientScope, this._untrustedContentOrigin, components.safeBrowser);
+        const safeBrowser = pluginInstance.safeBrowser = new SafeBrowser({
+          pluginInstance,
+          clientScope: this._clientScope,
+          untrustedContentOrigin: this._untrustedContentOrigin,
+          mainPath: components.safeBrowser,
+        });
         if (components.safeBrowser) {
           pluginInstance.rpc.registerForwarder(components.safeBrowser, safeBrowser);
         }

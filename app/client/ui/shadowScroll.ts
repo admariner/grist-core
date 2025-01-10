@@ -1,8 +1,8 @@
 import {dom, IDomArgs, Observable, styled} from 'grainjs';
 
 // Shadow css settings for member scroll top and bottom.
-const SHADOW_TOP = 'inset 0 4px 6px 0 rgba(217,217,217,0.4)';
-const SHADOW_BTM = 'inset 0 -4px 6px 0 rgba(217,217,217,0.4)';
+const SHADOW_TOP = 'inset 0 4px 6px 0 var(--grist-theme-scroll-shadow, rgba(217,217,217,0.4))';
+const SHADOW_BTM = 'inset 0 -4px 6px 0 var(--grist-theme-scroll-shadow, rgba(217,217,217,0.4))';
 
 /**
  * Creates a scroll div used in the UserManager and moveDoc menus to display
@@ -38,7 +38,8 @@ function isAtScrollTop(elem: Element): boolean {
 // Indicates that an element is currently scrolled such that the bottom of the element is visible.
 // It is expected that the elem arg has the offsetHeight property set.
 function isAtScrollBtm(elem: HTMLElement): boolean {
-  return elem.scrollTop >= (elem.scrollHeight - elem.offsetHeight);
+  // Check we're within a threshold of 1 pixel, to account for possible rounding.
+  return (elem.scrollHeight - elem.offsetHeight - elem.scrollTop) < 1;
 }
 
 const cssScrollMenu = styled('div', `

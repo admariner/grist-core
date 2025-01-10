@@ -11,6 +11,7 @@ export const ColumnToMap = t.iface([], {
   "type": t.opt("string"),
   "optional": t.opt("boolean"),
   "allowMultiple": t.opt("boolean"),
+  "strictType": t.opt("boolean"),
 });
 
 export const ColumnsToMap = t.array(t.union("string", "ColumnToMap"));
@@ -19,6 +20,7 @@ export const InteractionOptionsRequest = t.iface([], {
   "requiredAccess": t.opt("string"),
   "hasCustomOptions": t.opt("boolean"),
   "columns": t.opt("ColumnsToMap"),
+  "allowSelectBy": t.opt("boolean"),
 });
 
 export const InteractionOptions = t.iface([], {

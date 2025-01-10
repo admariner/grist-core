@@ -70,7 +70,9 @@
         "Sign Out": "Wyloguj się",
         "Sign in": "Zaloguj się",
         "Switch Accounts": "Przełącz konta",
-        "Toggle Mobile Mode": "Przełącz na tryb mobilny"
+        "Toggle Mobile Mode": "Przełącz na tryb mobilny",
+        "Activation": "Aktywacja",
+        "Sign In": "Zaloguj się"
     },
     "ViewAsDropdown": {
         "View As": "Wyświetl jako",
@@ -212,7 +214,7 @@
         "Featured": "Polecane",
         "Manage Users": "Zarządzanie użytkownikami",
         "More Examples and Templates": "Więcej przykładów i szablonów",
-        "Move": "Przenosić",
+        "Move": "Przenieś",
         "Move {{name}} to workspace": "Przenieś {{name}} do obszaru roboczego",
         "Other Sites": "Inne strony",
         "Permanently Delete \"{{name}}\"?": "Trwale usunąć „{{name}}”?",
@@ -410,7 +412,7 @@
     "HomeLeftPane": {
         "Delete": "Usuń",
         "Delete {{workspace}} and all included documents?": "Usunąć {{workspace}} i wszystkie dołączone dokumenty?",
-        "Examples & Templates": "Przykłady i szablony",
+        "Examples & Templates": "Szablony",
         "All Documents": "Wszystkie dokumenty",
         "Create Empty Document": "Utwórz pusty dokument",
         "Create Workspace": "Utwórz przestrzeń roboczą",
@@ -791,7 +793,7 @@
     },
     "OnBoardingPopups": {
         "Next": "Następny",
-        "Finish": "Skończyć"
+        "Finish": "Zakończ"
     },
     "SortFilterConfig": {
         "Revert": "Przywrócić",

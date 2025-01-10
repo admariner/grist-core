@@ -33,6 +33,8 @@ export interface UserPrefs extends Prefs {
   dismissedWelcomePopups?: DismissedReminder[];
   // Localization support.
   locale?: string;
+  // If only documents should be shown on the All Documents page.
+  onlyShowDocuments?: boolean;
 }
 
 // A collection of preferences related to a combination of user and org.
@@ -54,7 +56,10 @@ export interface UserOrgPrefs extends Prefs {
   seenDocTours?: string[];
 }
 
-export type OrgPrefs = Prefs;
+export interface OrgPrefs extends Prefs {
+  /* The URL (might be data url) of the custom logo to use for the org. */
+  customLogoUrl?: string|null;
+}
 
 /**
  * List of all deprecated warnings that user can see and dismiss.
@@ -86,7 +91,11 @@ export const BehavioralPrompt = StringUnion(
   'editCardLayout',
   'addNew',
   'rickRow',
-  'customURL',
+  'calendarConfig',
+
+  // The following were used in the past and should not be re-used.
+  // 'customURL',
+  // 'formsAreHere',
 );
 export type BehavioralPrompt = typeof BehavioralPrompt.type;
 
@@ -101,12 +110,17 @@ export interface BehavioralPromptPrefs {
  * List of all popups that user can see and dismiss
  */
 export const DismissedPopup = StringUnion(
-  'deleteRecords', // confirmation for deleting records keyboard shortcut,
-  'deleteFields',  // confirmation for deleting columns keyboard shortcut,
-  'tutorialFirstCard', // first card of the tutorial,
-  'formulaHelpInfo', // formula help info shown in the popup editor,
-  'formulaAssistantInfo', // formula assistant info shown in the popup editor,
-  'supportGrist', // nudge to opt in to telemetry,
+  'deleteRecords',        // confirmation for deleting records keyboard shortcut
+  'deleteFields',         // confirmation for deleting columns keyboard shortcut
+  'formulaHelpInfo',      // formula help info shown in the popup editor
+  'formulaAssistantInfo', // formula assistant info shown in the popup editor
+  'supportGrist',         // nudge to opt in to telemetry
+  'publishForm',          // confirmation for publishing a form
+  'unpublishForm',        // confirmation for unpublishing a form
+
+  /* Deprecated */
+  'onboardingCards',      // onboarding cards shown on the doc menu
+  'tutorialFirstCard',    // first card of the tutorial
 );
 export type DismissedPopup = typeof DismissedPopup.type;
 

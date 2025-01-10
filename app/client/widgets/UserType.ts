@@ -66,6 +66,15 @@ export const typeDefs: any = {
           wrap: undefined,
         }
       },
+      Markdown: {
+        cons: 'MarkdownTextBox',
+        editCons: 'TextEditor',
+        icon: 'FieldMarkdown',
+        options: {
+          alignment: 'left',
+          wrap: undefined,
+        }
+      },
       HyperLink: {
         cons: 'HyperLinkTextBox',
         editCons: 'HyperLinkEditor',
@@ -84,7 +93,7 @@ export const typeDefs: any = {
     widgets: {
       TextBox: {
         cons: 'NumericTextBox',
-        editCons: 'TextEditor',
+        editCons: 'NumericEditor',
         icon: 'FieldTextbox',
         options: {
           alignment: 'right',
@@ -98,7 +107,7 @@ export const typeDefs: any = {
       },
       Spinner: {
         cons: 'Spinner',
-        editCons: 'TextEditor',
+        editCons: 'NumericEditor',
         icon: 'FieldSpinner',
         options: {
           alignment: 'right',
@@ -154,6 +163,7 @@ export const typeDefs: any = {
     widgets: {
       TextBox: {
         cons: 'TextBox',
+        formCons: 'Switch',
         editCons: 'TextEditor',
         icon: 'FieldTextbox',
         options: {

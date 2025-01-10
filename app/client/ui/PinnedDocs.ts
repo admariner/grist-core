@@ -1,5 +1,6 @@
+import {getTimeFromNow} from 'app/client/lib/timeUtils';
 import {docUrl, urlState} from 'app/client/models/gristUrlState';
-import {getTimeFromNow, HomeModel} from 'app/client/models/HomeModel';
+import {HomeModel} from 'app/client/models/HomeModel';
 import {makeDocOptionsMenu, makeRemovedDocOptionsMenu} from 'app/client/ui/DocMenu';
 import {transientInput} from 'app/client/ui/transientInput';
 import {colors, theme, vars} from 'app/client/ui2018/cssVars';
@@ -37,7 +38,7 @@ export function buildPinnedDoc(home: HomeModel, doc: Document, workspace: Worksp
       pinnedDoc(
         isRenaming || doc.removedAt ?
           null :
-          urlState().setLinkUrl(docUrl(doc, isExample ? {org: workspace.orgDomain} : undefined)),
+          urlState().setLinkUrl({...docUrl(doc), ...(isExample ? {org: workspace.orgDomain} : {})}),
         pinnedDoc.cls('-no-access', !roles.canView(doc.access)),
         pinnedDocPreview(
           (doc.options?.icon ?
@@ -263,7 +264,7 @@ const cssPinnedDocDesc = styled(cssPinnedDocTimestamp, `
 
 const cssImage = styled('img', `
   position: relative;
-  background-color: ${colors.light};
+  background-color: ${colors.dark};
   height: 100%;
   width: 100%;
   object-fit: scale-down;

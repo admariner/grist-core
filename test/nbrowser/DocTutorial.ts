@@ -1,41 +1,32 @@
-import {DocCreationInfo} from 'app/common/DocListAPI';
 import {UserAPI} from 'app/common/UserAPI';
 import {assert, driver, Key} from 'mocha-webdriver';
 import * as gu from 'test/nbrowser/gristUtils';
-import {server, setupTestSuite} from 'test/nbrowser/testUtils';
-import {EnvironmentSnapshot} from 'test/server/testUtils';
+import {setupTestSuite} from 'test/nbrowser/testUtils';
 
 describe('DocTutorial', function () {
   this.timeout(60000);
-  setupTestSuite();
 
   gu.bigScreen();
 
-  let doc: DocCreationInfo;
   let api: UserAPI;
   let ownerSession: gu.Session;
+  let editorSession: gu.Session;
   let viewerSession: gu.Session;
-  let oldEnv: EnvironmentSnapshot;
 
-  const cleanup = setupTestSuite({team: true});
+  setupTestSuite({samples: true, tutorial: true, team: true});
 
-  before(async () => {
-    oldEnv = new EnvironmentSnapshot();
-    process.env.GRIST_UI_FEATURES = 'tutorials';
-    await server.restart();
-    ownerSession = await gu.session().teamSite.user('support').login();
-    doc = await ownerSession.tempDoc(cleanup, 'DocTutorial.grist');
-    api = ownerSession.createHomeApi();
-    await api.updateDoc(doc.id, {type: 'tutorial'});
-    await api.updateDocPermissions(doc.id, {users: {
-      'anon@getgrist.com': 'viewers',
-      'everyone@getgrist.com': 'viewers',
-    }});
+  gu.withEnvironmentSnapshot({
+    'GRIST_UI_FEATURES': 'tutorials',
+    'GRIST_TEMPLATE_ORG': 'templates',
+    'GRIST_ONBOARDING_TUTORIAL_DOC_ID': 'grist-basics',
   });
 
-  after(async function () {
-    oldEnv.restore();
-    await server.restart();
+  before(async () => {
+    ownerSession = await gu.session().customTeamSite('templates').user('support').login();
+    api = ownerSession.createHomeApi();
+    await api.updateDocPermissions('grist-basics', {users: {
+      [gu.translateUser('user1').email]: 'editors',
+    }});
   });
 
   describe('when logged out', function () {
@@ -44,20 +35,17 @@ describe('DocTutorial', function () {
     });
 
     it('shows a tutorial card', async function() {
-      await viewerSession.loadRelPath('/');
-      await gu.waitForDocMenuToLoad();
-      await gu.skipWelcomeQuestions();
+      await viewerSession.loadDocMenu('/');
+      assert.isTrue(await driver.find('.test-intro-tutorial').isDisplayed());
+      assert.equal(await driver.find('.test-intro-tutorial-percent-complete').getText(), '0%');
+    });
 
-      assert.isTrue(await driver.find('.test-tutorial-card-content').isDisplayed());
-      // Can dismiss it.
-      await driver.find('.test-tutorial-card-close').click();
-      assert.isFalse((await driver.findAll('.test-tutorial-card-content')).length > 0);
-      // When dismissed, we can see link in the menu.
+    it('shows a link to tutorial', async function() {
       assert.isTrue(await driver.find('.test-dm-basic-tutorial').isDisplayed());
     });
 
     it('redirects user to log in', async function() {
-      await viewerSession.loadDoc(`/doc/${doc.id}`, false);
+      await driver.find('.test-dm-basic-tutorial').click();
       await gu.checkLoginPage();
     });
   });
@@ -66,41 +54,24 @@ describe('DocTutorial', function () {
     let forkUrl: string;
 
     before(async () => {
-      ownerSession = await gu.session().teamSite.user('user1').login({showTips: true});
+      editorSession = await gu.session().customTeamSite('templates').user('user1').login({showTips: true});
+      await editorSession.loadDocMenu('/');
+      await driver.executeScript('resetDismissedPopups();');
+      await gu.waitForServer();
     });
 
     afterEach(() => gu.checkForErrors());
 
     it('shows a tutorial card', async function() {
-      await ownerSession.loadRelPath('/');
-      await gu.waitForDocMenuToLoad();
-      await gu.skipWelcomeQuestions();
-
-      // Make sure we have clean start.
-      await driver.executeScript('resetDismissedPopups();');
-      await gu.waitForServer();
-      await driver.navigate().refresh();
-      await gu.waitForDocMenuToLoad();
-
-      // Make sure we see the card.
-      assert.isTrue(await driver.find('.test-tutorial-card-content').isDisplayed());
-
-      // And can dismiss it.
-      await driver.find('.test-tutorial-card-close').click();
-      assert.isFalse((await driver.findAll('.test-tutorial-card-content')).length > 0);
-
-      // When dismissed, we can see link in the menu.
-      assert.isTrue(await driver.find('.test-dm-basic-tutorial').isDisplayed());
-
-      // Prefs are preserved after reload.
-      await driver.navigate().refresh();
-      await gu.waitForDocMenuToLoad();
-      assert.isFalse((await driver.findAll('.test-tutorial-card-content')).length > 0);
-      assert.isTrue(await driver.find('.test-dm-basic-tutorial').isDisplayed());
+      assert.isTrue(await driver.find('.test-intro-tutorial').isDisplayed());
+      await gu.waitToPass(async () =>
+        assert.equal(await driver.find('.test-intro-tutorial-percent-complete').getText(), '0%'),
+        2000
+      );
     });
 
     it('creates a fork the first time the document is opened', async function() {
-      await ownerSession.loadDoc(`/doc/${doc.id}`);
+      await driver.find('.test-dm-basic-tutorial').click();
       await driver.wait(async () => {
         forkUrl = await driver.getCurrentUrl();
         return /~/.test(forkUrl);
@@ -109,15 +80,14 @@ describe('DocTutorial', function () {
 
     it('shows a popup containing slides generated from the GristDocTutorial table', async function() {
       assert.isTrue(await driver.findWait('.test-doc-tutorial-popup', 2000).isDisplayed());
-      assert.equal(await driver.find('.test-floating-popup-header').getText(), 'DocTutorial');
+      assert.equal(await driver.find('.test-floating-popup-header').getText(), 'Grist Basics');
       assert.equal(
         await driver.findWait('.test-doc-tutorial-popup h1', 2000).getText(),
         'Intro'
       );
-      assert.equal(
-        await driver.find('.test-doc-tutorial-popup p').getText(),
-        'Welcome to the Grist Basics tutorial. We will cover the most important Grist '
-          + 'concepts and features. Let’s get started.'
+      assert.match(
+        await driver.find('.test-doc-tutorial-popup').getText(),
+        /Welcome to the Grist Basics tutorial/
       );
     });
 
@@ -196,8 +166,10 @@ describe('DocTutorial', function () {
       const windowWidth: any = await driver.executeScript('return window.innerWidth');
       assert.equal(dims.y + dims.height, windowHeight - 16);
 
-      // Now move it offscreen as low as possible.
-      await move({y: windowHeight - dims.y - 10});
+      // Now we'll test moving the window outside the viewport. Selenium throws when
+      // the mouse exceeds the bounds of the viewport, so we can't test every scenario.
+      // Start by moving the window as low as possible.
+      await move({y: windowHeight - dims.y - 32});
 
       // Make sure it is still visible.
       dims = await driver.find('.test-floating-popup-window').getRect();
@@ -213,71 +185,33 @@ describe('DocTutorial', function () {
       assert.equal(dims.x, windowWidth - 32 * 4);
 
       // Now move it to the left as far as possible.
-      await move({x: -3000});
+      await move({x: -windowWidth + 128});
 
       // Make sure it is still visible.
       dims = await driver.find('.test-floating-popup-window').getRect();
-      assert.isBelow(dims.x, 0);
+      assert.equal(dims.x, 0);
       assert.isAbove(dims.x + dims.width, 30);
-
-      const miniButton = driver.find(".test-floating-popup-minimize-maximize");
-      // Now move it back, but this time manually as the move handle is off screen.
-      await driver.withActions((a) => a
-        .move({origin: miniButton })
-        .press()
-        .move({origin: miniButton, x: Math.abs(dims.x) + 20})
-        .release()
-      );
-
-      // Maximize it (it was minimized as we used the button to move it).
-      await driver.find(".test-floating-popup-minimize-maximize").click();
 
       // Now move it to the top as far as possible.
       // Move it a little right, so that we don't end up on the logo. Driver is clicking logo sometimes.
-      await move({y: -windowHeight, x: 100});
+      await move({y: -windowHeight + 16, x: 100});
 
       // Make sure it is still visible.
       dims = await driver.find('.test-floating-popup-window').getRect();
       assert.equal(dims.y, 16);
-      assert.isAbove(dims.x, 100);
-      assert.isBelow(dims.x, windowWidth);
+      assert.equal(dims.x, 100);
 
       // Move back where it was.
-      let moverNow = await driver.find('.test-floating-popup-move-handle').getRect();
+      const moverNow = await driver.find('.test-floating-popup-move-handle').getRect();
       await move({x: moverInitial.x - moverNow.x});
       // And restore the size by double clicking the resizer.
       await driver.withActions((a) => a.doubleClick(driver.find('.test-floating-popup-resize-handle')));
-
-      // Now test if we can't resize it offscreen.
-      await move({y: 10000});
-      await move({y: -100});
-      // Header is about 100px above the viewport.
-      dims = await driver.find('.test-floating-popup-window').getRect();
-      assert.isBelow(dims.y, windowHeight);
-      assert.isAbove(dims.x, windowHeight - 140);
-
-      // Now resize as far as possible.
-      await resize({y: 10});
-      await resize({y: 300});
-
-      // Make sure it is still visible.
-      dims = await driver.find('.test-floating-popup-window').getRect();
-      assert.isBelow(dims.y, windowHeight - 16);
-
-      // Now move back and resize.
-      moverNow = await driver.find('.test-floating-popup-move-handle').getRect();
-      await move({x: moverInitial.x - moverNow.x, y: moverInitial.y - moverNow.y});
-      await driver.withActions((a) => a.doubleClick(driver.find('.test-floating-popup-resize-handle')));
-
-      dims = await driver.find('.test-floating-popup-window').getRect();
-      assert.equal(dims.height, initialDims.height);
-      assert.equal(dims.y, initialDims.y);
-      assert.equal(dims.x, initialDims.x);
     });
 
     it('is visible on all pages', async function() {
       for (const page of ['access-rules', 'raw', 'code', 'settings']) {
         await driver.find(`.test-tools-${page}`).click();
+        if (['access-rules', 'code'].includes(page)) { await gu.waitForServer(); }
         assert.isTrue(await driver.find('.test-doc-tutorial-popup').isDisplayed());
       }
     });
@@ -311,8 +245,8 @@ describe('DocTutorial', function () {
     });
 
     it('does not show the GristDocTutorial page or table to non-editors', async function() {
-      viewerSession = await gu.session().teamSite.user('user2').login();
-      await viewerSession.loadDoc(`/doc/${doc.id}`);
+      viewerSession = await gu.session().customTeamSite('templates').user('user2').login();
+      await viewerSession.loadDoc(`/doc/grist-basics`);
       assert.deepEqual(await gu.getPageNames(), ['Page 1', 'Page 2']);
       await driver.find('.test-tools-raw').click();
       await driver.findWait('.test-raw-data-list', 1000);
@@ -331,13 +265,13 @@ describe('DocTutorial', function () {
     it('only allows users access to their own forks', async function() {
       await driver.navigate().to(forkUrl);
       assert.match(await driver.findWait('.test-error-header', 2000).getText(), /Access denied/);
-      await viewerSession.loadDoc(`/doc/${doc.id}`);
+      await viewerSession.loadDoc(`/doc/grist-basics`);
       let otherForkUrl: string;
       await driver.wait(async () => {
         otherForkUrl = await driver.getCurrentUrl();
         return /~/.test(forkUrl);
       });
-      ownerSession = await gu.session().teamSite.user('user1').login();
+      editorSession = await gu.session().customTeamSite('templates').user('user1').login();
       await driver.navigate().to(otherForkUrl!);
       assert.match(await driver.findWait('.test-error-header', 2000).getText(), /Access denied/);
       await driver.navigate().to(forkUrl);
@@ -355,8 +289,8 @@ describe('DocTutorial', function () {
       );
       assert.equal(
         await driver.find('.test-doc-tutorial-popup h1 + p').getText(),
-        'On the left-side panel is a list of pages which are views of your data. Right'
-          + ' now, there are two pages, Page 1 and Page 2. You are looking at Page 1.'
+        'On the left-side panel is a list of pages, which are views of your data. ' +
+          'Right now, there are two pages: Page 1 and Page 2. You are looking at Page 1.'
       );
       assert.isTrue(await driver.find('.test-doc-tutorial-popup-next').isDisplayed());
       assert.isTrue(await driver.find('.test-doc-tutorial-popup-previous').isDisplayed());
@@ -366,10 +300,9 @@ describe('DocTutorial', function () {
         await driver.find('.test-doc-tutorial-popup h1').getText(),
         'Intro'
       );
-      assert.equal(
-        await driver.find('.test-doc-tutorial-popup p').getText(),
-        'Welcome to the Grist Basics tutorial. We will cover the most important Grist '
-          + 'concepts and features. Let’s get started.'
+      assert.match(
+        await driver.find('.test-doc-tutorial-popup').getText(),
+        /Welcome to the Grist Basics tutorial/
       );
       assert.isTrue(await driver.find('.test-doc-tutorial-popup-next').isDisplayed());
       assert.isFalse(await driver.find('.test-doc-tutorial-popup-previous').isDisplayed());
@@ -391,8 +324,7 @@ describe('DocTutorial', function () {
       );
       assert.equal(
         await driver.find('.test-doc-tutorial-popup p').getText(),
-        "You can add new columns to your table by clicking the ‘+’ icon"
-          + ' to the far right of your column headers.'
+        "Let's start with the basics of working with spreadsheet data — columns and rows."
       );
 
       const slide1 = await driver.find('.test-doc-tutorial-popup-slide-1');
@@ -407,10 +339,9 @@ describe('DocTutorial', function () {
         await driver.find('.test-doc-tutorial-popup h1').getText(),
         'Intro'
       );
-      assert.equal(
-        await driver.find('.test-doc-tutorial-popup p').getText(),
-        'Welcome to the Grist Basics tutorial. We will cover the most important Grist '
-          + 'concepts and features. Let’s get started.'
+      assert.match(
+        await driver.find('.test-doc-tutorial-popup').getText(),
+        /Welcome to the Grist Basics tutorial/
       );
     });
 
@@ -419,7 +350,7 @@ describe('DocTutorial', function () {
       assert.isTrue(await driver.find('.test-doc-tutorial-lightbox').isDisplayed());
       assert.equal(
         await driver.find('.test-doc-tutorial-lightbox-image').getAttribute('src'),
-        'https://www.getgrist.com/wp-content/uploads/2023/03/Row-1-Intro.png'
+        'https://www.getgrist.com/wp-content/uploads/2023/11/Row-1-Intro.png'
       );
       await driver.find('.test-doc-tutorial-lightbox-close').click();
       assert.isFalse(await driver.find('.test-doc-tutorial-lightbox').isPresent());
@@ -461,7 +392,7 @@ describe('DocTutorial', function () {
 
     it('remembers the last slide the user had open', async function() {
       await driver.find('.test-doc-tutorial-popup-slide-3').click();
-      // There's a 1000ms debounce in place for updates to the last slide.
+      // There's a 1000ms debounce in place when updating tutorial progress.
       await driver.sleep(1000 + 250);
       await gu.waitForServer();
       await driver.navigate().refresh();
@@ -473,8 +404,7 @@ describe('DocTutorial', function () {
       );
       assert.equal(
         await driver.find('.test-doc-tutorial-popup p').getText(),
-        "You can add new columns to your table by clicking the ‘+’ icon"
-          + ' to the far right of your column headers.'
+        "Let's start with the basics of working with spreadsheet data — columns and rows."
       );
     });
 
@@ -483,7 +413,7 @@ describe('DocTutorial', function () {
       await gu.getCell(0, 1).click();
       await gu.sendKeys('Redacted', Key.ENTER);
       await gu.waitForServer();
-      await ownerSession.loadDoc(`/doc/${doc.id}`);
+      await editorSession.loadDoc(`/doc/grist-basics`);
       let currentUrl: string;
       await driver.wait(async () => {
         currentUrl = await driver.getCurrentUrl();
@@ -493,8 +423,21 @@ describe('DocTutorial', function () {
       assert.deepEqual(await gu.getVisibleGridCells({cols: [0], rowNums: [1]}), ['Redacted']);
     });
 
+    it('tracks completion percentage', async function() {
+      await driver.find('.test-doc-tutorial-popup-end-tutorial').click();
+      await gu.waitForServer();
+      await gu.waitForDocMenuToLoad();
+      await gu.waitToPass(async () =>
+        assert.equal(await driver.find('.test-intro-tutorial-percent-complete').getText(), '15%'),
+        2000
+      );
+      await driver.find('.test-dm-basic-tutorial').click();
+      await gu.waitForDocToLoad();
+    });
+
     it('skips starting or resuming a tutorial if the open mode is set to default', async function() {
-      await ownerSession.loadDoc(`/doc/${doc.id}/m/default`);
+      ownerSession = await gu.session().customTeamSite('templates').user('support').login();
+      await ownerSession.loadDoc(`/doc/grist-basics/m/default`);
       assert.deepEqual(await gu.getPageNames(), ['Page 1', 'Page 2', 'GristDocTutorial']);
       await driver.find('.test-tools-raw').click();
       await gu.waitForServer();
@@ -504,11 +447,14 @@ describe('DocTutorial', function () {
     });
 
     it('can restart tutorials', async function() {
-      // Simulate that the tutorial has been updated since it was forked.
-      await api.updateDoc(doc.id, {name: 'DocTutorial V2'});
-      await api.applyUserActions(doc.id, [['AddTable', 'NewTable', [{id: 'A'}]]]);
+      // Update the tutorial as the owner.
+      await driver.find('.test-bc-doc').doClick();
+      await driver.sendKeys('DocTutorial V2', Key.ENTER);
+      await gu.waitForServer();
+      await gu.addNewTable();
 
-      // Load the fork of the tutorial.
+      // Switch back to the editor's fork of the tutorial.
+      editorSession = await gu.session().customTeamSite('templates').user('user1').login();
       await driver.navigate().to(forkUrl);
       await gu.waitForDocToLoad();
       await driver.findWait('.test-doc-tutorial-popup', 2000);
@@ -528,10 +474,9 @@ describe('DocTutorial', function () {
         await driver.findWait('.test-doc-tutorial-popup h1', 2000).getText(),
         'Intro'
       );
-      assert.equal(
-        await driver.find('.test-doc-tutorial-popup p').getText(),
-        'Welcome to the Grist Basics tutorial. We will cover the most important Grist '
-          + 'concepts and features. Let’s get started.'
+      assert.match(
+        await driver.find('.test-doc-tutorial-popup').getText(),
+        /Welcome to the Grist Basics tutorial/
       );
 
       // Check that edits were reset.
@@ -540,10 +485,13 @@ describe('DocTutorial', function () {
       // Check that changes made to the tutorial since it was last started are included.
       assert.equal(await driver.find('.test-doc-tutorial-popup-header').getText(),
         'DocTutorial V2');
-      assert.deepEqual(await gu.getPageNames(), ['Page 1', 'Page 2', 'GristDocTutorial', 'NewTable']);
+      assert.deepEqual(await gu.getPageNames(), ['Page 1', 'Page 2', 'GristDocTutorial', 'Table1']);
     });
 
-    it('allows editors to replace original', async function() {
+    it('allows owners to replace original', async function() {
+      ownerSession = await gu.session().customTeamSite('templates').user('support').login();
+      await ownerSession.loadDoc(`/doc/grist-basics`);
+
       // Make an edit to one of the tutorial slides.
       await gu.openPage('GristDocTutorial');
       await gu.getCell(1, 1).click();
@@ -569,8 +517,8 @@ describe('DocTutorial', function () {
       await gu.waitForServer();
 
       // Switch to another user and restart the tutorial.
-      viewerSession = await gu.session().teamSite.user('user2').login();
-      await viewerSession.loadDoc(`/doc/${doc.id}`);
+      viewerSession = await gu.session().customTeamSite('templates').user('user2').login();
+      await viewerSession.loadDoc(`/doc/grist-basics`);
       await driver.findWait('.test-doc-tutorial-popup-restart', 2000).click();
       await driver.find('.test-modal-confirm').click();
       await gu.waitForServer();
@@ -586,32 +534,40 @@ describe('DocTutorial', function () {
     it('redirects to the last visited site when finished', async function() {
       const otherSiteSession = await gu.session().personalSite.user('user1').addLogin();
       await otherSiteSession.loadDocMenu('/');
-      await ownerSession.loadDoc(`/doc/${doc.id}`);
+      await ownerSession.loadDoc(`/doc/grist-basics`);
       await driver.findWait('.test-doc-tutorial-popup-slide-13', 2000).click();
       await driver.find('.test-doc-tutorial-popup-next').click();
       await gu.waitForDocMenuToLoad();
       assert.match(await driver.getCurrentUrl(), /o\/docs\/$/);
+      await gu.waitToPass(async () =>
+        assert.equal(await driver.find('.test-intro-tutorial-percent-complete').getText(), '0%'),
+        2000
+      );
+      await ownerSession.loadDocMenu('/');
+      await gu.waitToPass(async () =>
+        assert.equal(await driver.find('.test-intro-tutorial-percent-complete').getText(), '100%'),
+        2000
+      );
     });
   });
 
   describe('without tutorial flag set', function () {
     before(async () => {
-      await api.updateDoc(doc.id, {type: null});
-      ownerSession = await gu.session().teamSite.user('user1').login();
-      await ownerSession.loadDoc(`/doc/${doc.id}`);
+      await api.updateDoc('grist-basics', {type: null});
+      ownerSession = await gu.session().customTeamSite('templates').user('support').login();
+      await ownerSession.loadDoc(`/doc/grist-basics`);
     });
 
     afterEach(() => gu.checkForErrors());
 
     it('shows the GristDocTutorial page and table', async function() {
       assert.deepEqual(await gu.getPageNames(),
-        ['Page 1', 'Page 2', 'GristDocTutorial', 'NewTable']);
+        ['Page 1', 'Page 2', 'GristDocTutorial', 'Table1']);
       await gu.openPage('GristDocTutorial');
       assert.deepEqual(
-        await gu.getVisibleGridCells({cols: [1, 2], rowNums: [1]}),
+        await gu.getVisibleGridCells({cols: [1], rowNums: [1]}),
         [
           '# Intro\n\nWelcome to the Grist Basics tutorial V2.',
-          '',
         ]
       );
       await driver.find('.test-tools-raw').click();

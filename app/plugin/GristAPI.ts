@@ -37,6 +37,41 @@
 
 import {RenderOptions, RenderTarget} from './RenderOptions';
 
+// This is the row ID used in the client, but it's helpful to have available in some common code
+// as well, which is why it's declared here. Note that for data actions and stored data,
+// 'new' is not used.
+/**
+ * Represents the id of a row in a table. The value of the `id` column. Might be a number or 'new' value for a new row.
+ */
+export type UIRowId = number | 'new';
+
+/**
+ * Represents the position of an active cursor on a page.
+ */
+export interface CursorPos {
+  /**
+   * The rowId (value of the `id` column) of the current cursor position, or 'new' if the cursor is on a new row.
+   */
+  rowId?: UIRowId;
+  /**
+   * The index of the current row in the current view.
+   */
+  rowIndex?: number;
+  /**
+   * The index of the selected field in the current view.
+   */
+  fieldIndex?: number;
+  /**
+   * The id of a section that this cursor is in. Ignored when setting a cursor position for a particular view.
+   */
+  sectionId?: number;
+  /**
+   * When in a linked section, CursorPos may include which rows in the controlling sections are
+   * selected: the rowId in the linking-source section, in _that_ section's linking source, etc.
+   */
+  linkingRowIds?: UIRowId[];
+}
+
 export type ComponentKind = "safeBrowser" | "safePython" | "unsafeNode";
 
 export const RPC_GRISTAPI_INTERFACE = '_grist_api';
@@ -83,7 +118,7 @@ export interface GristDocAPI {
   listTables(): Promise<string[]>;
 
   /**
-   * Returns a complete table of data as [[RowRecords]], including the
+   * Returns a complete table of data as {@link GristData.RowRecords | GristData.RowRecords}, including the
    * 'id' column. Do not modify the returned arrays in-place, especially if used
    * directly (not over RPC).
    */
@@ -105,32 +140,72 @@ export interface GristDocAPI {
 }
 
 /**
+ * Options for functions which fetch data from the selected table or record:
+ *
+ * - {@link onRecords}
+ * - {@link onRecord}
+ * - {@link fetchSelectedRecord}
+ * - {@link fetchSelectedTable}
+ * - {@link GristView.fetchSelectedRecord | GristView.fetchSelectedRecord}
+ * - {@link GristView.fetchSelectedTable | GristView.fetchSelectedTable}
+ *
+ * The different methods have different default values for `keepEncoded` and `format`.
+ **/
+export interface FetchSelectedOptions {
+  /**
+   * - `true`: the returned data will contain raw {@link GristData.CellValue}'s.
+   * - `false`: the values will be decoded, replacing e.g. `['D', timestamp]` with a moment date.
+   */
+  keepEncoded?: boolean;
+
+  /**
+   * - `rows`, the returned data will be an array of objects, one per row, with column names as keys.
+   * - `columns`, the returned data will be an object with column names as keys, and arrays of values.
+   */
+  format?: 'rows' | 'columns';
+
+  /**
+   * - `shown` (default): return only columns that are explicitly shown
+   *   in the right panel configuration of the widget. This is the only value that doesn't require full access.
+   * - `normal`: return all 'normal' columns, regardless of whether the user has shown them.
+   * - `all`: also return special invisible columns like `manualSort` and display helper columns.
+   */
+  includeColumns?: 'shown' | 'normal' | 'all';
+}
+
+/**
  * Interface for the data backing a single widget.
  */
 export interface GristView {
   /**
-   * Like [[GristDocAPI.fetchTable]], but gets data for the custom section specifically, if there is any.
+   * Like {@link GristDocAPI.fetchTable | GristDocAPI.fetchTable},
+   * but gets data for the custom section specifically, if there is any.
+   * By default, `options.keepEncoded` is `true` and `format` is `columns`.
    */
-  fetchSelectedTable(): Promise<any>;
-  // TODO: return type is Promise{[colId: string]: CellValue[]}> but cannot be specified
-  // because ts-interface-builder does not properly support index-signature.
+  fetchSelectedTable(options?: FetchSelectedOptions): Promise<any>;
 
   /**
-   * Fetches selected record by its `rowId`.
+   * Fetches selected record by its `rowId`. By default, `options.keepEncoded` is `true`.
    */
-  fetchSelectedRecord(rowId: number): Promise<any>;
+  fetchSelectedRecord(rowId: number, options?: FetchSelectedOptions): Promise<any>;
   // TODO: return type is Promise{[colId: string]: CellValue}> but cannot be specified
   // because ts-interface-builder does not properly support index-signature.
 
   /**
-   * Allow custom widget to be listed as a possible source for linking with SELECT BY.
+   * Deprecated now. It was used for filtering selected table by `setSelectedRows` method.
+   * Now the preferred way it to use ready message.
    */
   allowSelectBy(): Promise<void>;
 
   /**
-   * Set the list of selected rows to be used against any linked widget. Requires `allowSelectBy()`.
+   * Set the list of selected rows to be used against any linked widget.
    */
-  setSelectedRows(rowIds: number[]): Promise<void>;
+  setSelectedRows(rowIds: number[]|null): Promise<void>;
+
+  /**
+   * Sets the cursor position to a specific row and field. `sectionId` is ignored. Used for widget linking.
+   */
+  setCursorPos(pos: CursorPos): Promise<void>
 }
 
 /**

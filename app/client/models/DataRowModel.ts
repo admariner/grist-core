@@ -5,7 +5,8 @@ import DataTableModel from 'app/client/models/DataTableModel';
 import { IRowModel } from 'app/client/models/DocModel';
 import { ValidationRec } from 'app/client/models/entities/ValidationRec';
 import * as modelUtil from 'app/client/models/modelUtil';
-import { CellValue, ColValues } from 'app/common/DocActions';
+import { buildReassignModal } from 'app/client/ui/buildReassignModal';
+import { CellValue, ColValues, DocAction } from 'app/common/DocActions';
 import * as ko from 'knockout';
 
 /**
@@ -21,6 +22,9 @@ export class DataRowModel extends BaseRowModel {
   public _validationFailures: ko.PureComputed<Array<IRowModel<'_grist_Validations'>>>;
   public _isAddRow: ko.Observable<boolean>;
 
+  // Observable that's set whenever a change to a row model is likely to be real, and unset when a
+  // row model is being reassigned to a different row. If a widget uses CSS transitions for
+  // changes, those should only be enabled when _isRealChange is true.
   public _isRealChange: ko.Observable<boolean>;
 
   public constructor(dataTableModel: DataTableModel, colNames: string[]) {
@@ -60,6 +64,19 @@ export class DataRowModel extends BaseRowModel {
 
     try {
       return await this._table.sendTableAction(action);
+    } catch(ex) {
+      if (ex.code === 'UNIQUE_REFERENCE_VIOLATION') {
+        // Show modal to repeat the save.
+        await buildReassignModal({
+          docModel: this._table.docModel,
+          actions: [
+            action as DocAction,
+          ]
+        });
+        // Ignore the error here, no point in returning it.
+      } else {
+        throw ex;
+      }
     } finally {
       // If the action doesn't actually result in an update to a row, it's important to reset the
       // observable to the data (if the data did get updated, this will be a no-op). This is also

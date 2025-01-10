@@ -22,10 +22,9 @@ export type CommandName =
   | 'printSection'
   | 'showRawData'
   | 'openWidgetConfiguration'
-  | 'maximizeActiveSection'
+  | 'expandSection'
   | 'leftPanelOpen'
   | 'rightPanelOpen'
-  | 'videoTourToolsOpen'
   | 'cursorDown'
   | 'cursorUp'
   | 'cursorRight'
@@ -64,6 +63,7 @@ export type CommandName =
   | 'cut'
   | 'paste'
   | 'contextMenuCopy'
+  | 'contextMenuCopyWithHeaders'
   | 'contextMenuCut'
   | 'contextMenuPaste'
   | 'fillSelectionDown'
@@ -71,7 +71,6 @@ export type CommandName =
   | 'input'
   | 'editLabel'
   | 'editLayout'
-  | 'toggleCheckbox'
   | 'historyPrevious'
   | 'historyNext'
   | 'makeFormula'
@@ -85,6 +84,7 @@ export type CommandName =
   | 'deleteRecords'
   | 'insertFieldBefore'
   | 'insertFieldAfter'
+  | 'makeHeadersFromRow'
   | 'renameField'
   | 'hideFields'
   | 'hideCardFields'
@@ -96,11 +96,12 @@ export type CommandName =
   | 'addSection'
   | 'deleteSection'
   | 'collapseSection'
-  | 'expandSection'
+  | 'restoreSection'
   | 'deleteCollapsedSection'
   | 'duplicateRows'
   | 'sortAsc'
   | 'sortDesc'
+  | 'showPopup'
   | 'addSortAsc'
   | 'addSortDesc'
   | 'filterByThisCellValue'
@@ -114,8 +115,11 @@ export type CommandName =
   | 'clearCopySelection'
   | 'detachEditor'
   | 'activateAssistant'
+  | 'viewAsCard'
+  | 'showColumns'
+  | 'createForm'
+  | 'insertField'
   ;
-
 
 export interface CommandDef {
   name: CommandName;
@@ -123,6 +127,11 @@ export interface CommandDef {
   desc: string | null;
   bindKeys?: boolean;
   deprecated?: boolean;
+}
+
+export interface MenuCommand {
+  humanKeys: string[];
+  run: (...args: any[]) => any;
 }
 
 export interface CommendGroupDef {
@@ -246,7 +255,7 @@ export const groups: CommendGroupDef[] = [{
       desc: 'Open Custom widget configuration screen',
     },
     {
-      name: 'maximizeActiveSection',
+      name: 'expandSection',
       keys: [],
       desc: 'Maximize the active section',
     },
@@ -261,15 +270,30 @@ export const groups: CommendGroupDef[] = [{
       desc: 'Shortcut to open the right panel',
     },
     {
-      name: 'videoTourToolsOpen',
-      keys: [],
-      desc: 'Shortcut to open video tour from home left panel',
-    },
-    {
       name: 'activateAssistant',
       keys: [],
       desc: 'Activate assistant',
     },
+    {
+      name: 'viewAsCard',
+      keys: ['Space'],
+      desc: 'Show the record card widget of the selected record',
+    },
+    {
+      name: 'showPopup',
+      keys:[],
+      desc: 'showing a behavioral popup'
+    },
+    {
+      name: 'createForm',
+      keys: [],
+      desc: 'Creates form for active table',
+    },
+    {
+      name: 'insertField',
+      keys: [],
+      desc: 'Insert new column in default location',
+    }
   ]
 }, {
   group: 'Navigation',
@@ -420,7 +444,7 @@ export const groups: CommendGroupDef[] = [{
       desc: 'Finish editing a cell, saving the value'
     }, {
       name: 'detachEditor',
-      keys: [''],
+      keys: [],
       desc: 'Detach active editor'
     }, {
       name: 'fieldEditSaveHere',
@@ -447,6 +471,10 @@ export const groups: CommendGroupDef[] = [{
       keys: ['Mod+C'],
       desc: 'Copy current selection to clipboard',
       bindKeys: false,
+    }, {
+      name: 'contextMenuCopyWithHeaders',
+      keys: [],
+      desc: 'Copy current selection to clipboard including headers',
     }, {
       name: 'contextMenuCut',
       keys: ['Mod+X'],
@@ -477,10 +505,6 @@ export const groups: CommendGroupDef[] = [{
       name: 'editLayout',
       keys: [],
       desc: 'Edit record layout'
-    }, {
-      name: 'toggleCheckbox',
-      keys: ['Enter', 'Space'],
-      desc: 'Toggles the value of checkbox cells'
     }, {
       name: 'historyPrevious',
       keys: ['Up'],
@@ -539,6 +563,10 @@ export const groups: CommendGroupDef[] = [{
       keys: ['Alt+='],
       desc: 'Insert a new column, after the currently selected one'
     }, {
+      name: 'makeHeadersFromRow',
+      keys: ['Mod+Shift+H'],
+      desc: 'Use currently selected line as table headers'
+    }, {
       name: 'renameField',
       keys: ['Ctrl+m'],
       desc: 'Rename the currently selected column'
@@ -563,10 +591,6 @@ export const groups: CommendGroupDef[] = [{
       keys: [],
       desc: 'Clear the selected columns'
     }, {
-      name: 'clearCardFields',
-      keys: [],
-      desc: 'Clear the selected fields'
-    }, {
       name: 'convertFormulasToData',
       keys: [],
       desc: 'Convert the selected columns from formula to data'
@@ -583,7 +607,7 @@ export const groups: CommendGroupDef[] = [{
       keys: [],
       desc: 'Collapse the currently active viewsection'
     }, {
-      name: 'expandSection',
+      name: 'restoreSection',
       keys: [],
       desc: 'Expand collapsed viewsection'
     }, {
@@ -594,7 +618,11 @@ export const groups: CommendGroupDef[] = [{
       name: 'duplicateRows',
       keys: ['Mod+Shift+d'],
       desc: 'Duplicate selected rows'
-    },
+    }, {
+      name: 'showColumns',
+      keys: [],
+      desc: 'Show hidden columns'
+    }
   ],
 }, {
   group: 'Sorting',

@@ -1,6 +1,5 @@
 import {allCommands} from 'app/client/components/commands';
 import {makeT} from 'app/client/lib/localization';
-import {IRowContextMenu} from 'app/client/ui/RowContextMenu';
 import {menuDivider, menuItemCmd} from 'app/client/ui2018/menus';
 import {dom} from 'grainjs';
 
@@ -11,7 +10,7 @@ export interface IFieldContextMenu {
   isReadonly: boolean;
 }
 
-export function FieldContextMenu(_rowOptions: IRowContextMenu, fieldOptions: IFieldContextMenu) {
+export function FieldContextMenu(fieldOptions: IFieldContextMenu) {
   const {disableModify, isReadonly} = fieldOptions;
   const disableForReadonlyColumn = dom.cls('disabled', disableModify || isReadonly);
   return [
@@ -19,7 +18,7 @@ export function FieldContextMenu(_rowOptions: IRowContextMenu, fieldOptions: IFi
     menuItemCmd(allCommands.contextMenuCopy, t('Copy')),
     menuItemCmd(allCommands.contextMenuPaste, t('Paste'), disableForReadonlyColumn),
     menuDivider(),
-    menuItemCmd(allCommands.clearCardFields, t('Clear field'), disableForReadonlyColumn),
+    menuItemCmd(allCommands.clearValues, t('Clear field'), disableForReadonlyColumn),
     menuItemCmd(allCommands.hideCardFields, t('Hide field')),
     menuDivider(),
     menuItemCmd(allCommands.copyLink, t('Copy anchor link')),

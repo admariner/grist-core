@@ -79,6 +79,8 @@ describe('ActionLog', function() {
     await gu.undo(2);
     await driver.navigate().refresh();
     await gu.waitForDocToLoad();
+    // Dismiss forms announcement popup, if present.
+    await gu.dismissBehavioralPrompts();
     // refreshing browser will restore position on last cell
     // switch active cell to the first cell in the first row
     await gu.getCell(0, 1).click();
@@ -133,7 +135,7 @@ describe('ActionLog', function() {
     assert.equal(await gu.getActiveCell().getText(), 'f');
 
     // Delete Table1Renamed.
-    await gu.removeTable('Table1Renamed');
+    await gu.removeTable('Table1Renamed', {dismissTips: true});
     await driver.findContent('.action_log label', /All tables/).find('input').click();
 
     const item4 = await getActionLogItem(4);

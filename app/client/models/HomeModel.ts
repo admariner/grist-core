@@ -6,37 +6,19 @@ import {localStorageObs} from 'app/client/lib/localStorageObs';
 import {AppModel, reportError} from 'app/client/models/AppModel';
 import {reportMessage, UserError} from 'app/client/models/errors';
 import {urlState} from 'app/client/models/gristUrlState';
+import {getUserPrefObs} from 'app/client/models/UserPrefs';
 import {ownerName} from 'app/client/models/WorkspaceInfo';
-import {IHomePage} from 'app/common/gristUrls';
+import {IHomePage, isFeatureEnabled} from 'app/common/gristUrls';
 import {isLongerThan} from 'app/common/gutil';
 import {SortPref, UserOrgPrefs, ViewPref} from 'app/common/Prefs';
 import * as roles from 'app/common/roles';
 import {getGristConfig} from 'app/common/urlUtils';
 import {Document, Organization, Workspace} from 'app/common/UserAPI';
 import {bundleChanges, Computed, Disposable, Observable, subscribe} from 'grainjs';
-import moment from 'moment';
 import flatten = require('lodash/flatten');
 import sortBy = require('lodash/sortBy');
 
 const DELAY_BEFORE_SPINNER_MS = 500;
-
-// Given a UTC Date ISO 8601 string (the doc updatedAt string), gives a reader-friendly
-// relative time to now - e.g. 'yesterday', '2 days ago'.
-export function getTimeFromNow(utcDateISO: string): string {
-  const time = moment.utc(utcDateISO);
-  const now = moment();
-  const diff = now.diff(time, 's');
-  if (diff < 0 && diff > -60) {
-    // If the time appears to be in the future, but less than a minute
-    // in the future, chalk it up to a difference in time
-    // synchronization and don't claim the resource will be changed in
-    // the future.  For larger differences, just report them
-    // literally, there's a more serious problem or lack of
-    // synchronization.
-    return now.fromNow();
-  }
-  return time.fromNow();
-}
 
 export interface HomeModel {
   // PageType value, one of the discriminated union values used by AppModel.
@@ -50,7 +32,7 @@ export interface HomeModel {
   workspaces: Observable<Workspace[]>;
   loading: Observable<boolean|"slow">;          // Set to "slow" when loading for a while.
   available: Observable<boolean>;               // set if workspaces loaded correctly.
-  showIntro: Observable<boolean>;               // set if no docs and we should show intro.
+  empty: Observable<boolean>;                   // set if no docs.
   singleWorkspace: Observable<boolean>;         // set if workspace name should be hidden.
   trashWorkspaces: Observable<Workspace[]>;     // only set when viewing trash
   templateWorkspaces: Observable<Workspace[]>;  // Only set when viewing templates or all documents.
@@ -68,6 +50,8 @@ export interface HomeModel {
   // the current org is a personal org, or the current org is view access only.
   otherSites: Observable<Organization[]>;
 
+  onlyShowDocuments: Observable<boolean>;
+
   currentSort: Observable<SortPref>;
   currentView: Observable<ViewPref>;
   importSources: Observable<ImportSourceElement[]>;
@@ -77,6 +61,8 @@ export interface HomeModel {
   newDocWorkspace: Observable<Workspace|null|"unsaved">;
 
   shouldShowAddNewTip: Observable<boolean>;
+
+  onboardingTutorial: Observable<Document|null>;
 
   createWorkspace(name: string): Promise<void>;
   renameWorkspace(id: number, name: string): Promise<void>;
@@ -140,25 +126,32 @@ export class HomeModelImpl extends Disposable implements HomeModel, ViewSettings
       return orgs.filter(org => org.id !== currentOrg.id);
     });
 
+  public readonly onlyShowDocuments = getUserPrefObs(this.app.userPrefsObs, 'onlyShowDocuments', {
+    defaultValue: false,
+  }) as Observable<boolean>;
+
   public readonly currentSort: Observable<SortPref>;
   public readonly currentView: Observable<ViewPref>;
 
   // The workspace for new docs, or "unsaved" to only allow unsaved-doc creation, or null if the
   // user isn't allowed to create a doc.
   public readonly newDocWorkspace = Computed.create(this, this.currentPage, this.currentWS, (use, page, ws) => {
-    // Anonymous user can create docs, but in unsaved mode.
-    if (!this.app.currentValidUser) { return "unsaved"; }
+    if (!this.app.currentValidUser) {
+      // Anonymous user can create docs, but in unsaved mode and only when enabled.
+      return getGristConfig().enableAnonPlayground ? 'unsaved' : null;
+    }
     if (page === 'trash') { return null; }
     const destWS = (['all', 'templates'].includes(page)) ? (use(this.workspaces)[0] || null) : ws;
     return destWS && roles.canEdit(destWS.access) ? destWS : null;
   });
 
-  // Whether to show intro: no docs (other than examples).
-  public readonly showIntro = Computed.create(this, this.workspaces, (use, wss) => (
+  public readonly empty = Computed.create(this, this.workspaces, (use, wss) => (
     wss.every((ws) => ws.isSupportWorkspace || ws.docs.length === 0)));
 
   public readonly shouldShowAddNewTip = Observable.create(this,
-    !this._app.behavioralPromptsManager.hasSeenTip('addNew'));
+    !this._app.behavioralPromptsManager.hasSeenPopup('addNew'));
+
+  public readonly onboardingTutorial = Observable.create<Document|null>(this, null);
 
   private _userOrgPrefs = Observable.create<UserOrgPrefs|undefined>(this, this._app.currentOrg?.userOrgPrefs);
 
@@ -186,14 +179,17 @@ export class HomeModelImpl extends Disposable implements HomeModel, ViewSettings
       this._updateWorkspaces().catch(reportError)));
 
     // Defer home plugin initialization
-    const pluginManager = new HomePluginManager(
-      _app.topAppModel.plugins,
-      _app.topAppModel.getUntrustedContentOrigin()!,
-      clientScope);
+    const pluginManager = new HomePluginManager({
+      localPlugins: _app.topAppModel.plugins,
+      untrustedContentOrigin: _app.topAppModel.getUntrustedContentOrigin()!,
+      clientScope,
+    });
     const importSources = ImportSourceElement.fromArray(pluginManager.pluginsList);
     this.importSources.set(importSources);
 
     this._app.refreshOrgUsage().catch(reportError);
+
+    this._loadWelcomeTutorial().catch(reportError);
   }
 
   // Accessor for the AppModel containing this HomeModel.
@@ -355,22 +351,16 @@ export class HomeModelImpl extends Disposable implements HomeModel, ViewSettings
   }
 
   /**
-   * Fetches templates if on the Templates or All Documents page.
-   *
-   * Only fetches featured (pinned) templates on the All Documents page.
+   * Fetches templates if on the Templates page.
    */
   private async _maybeFetchTemplates(): Promise<Workspace[] | null> {
-    const {templateOrg} = getGristConfig();
-    if (!templateOrg) { return null; }
-
-    const currentPage = this.currentPage.get();
-    const shouldFetchTemplates = ['all', 'templates'].includes(currentPage);
-    if (!shouldFetchTemplates) { return null; }
+    if (!getGristConfig().templateOrg || this.currentPage.get() !== 'templates') {
+      return null;
+    }
 
     let templateWss: Workspace[] = [];
     try {
-      const onlyFeatured = currentPage === 'all';
-      templateWss = await this._app.api.getTemplates(onlyFeatured);
+      templateWss = await this._app.api.getTemplates();
     } catch {
       reportError('Failed to load templates');
     }
@@ -388,6 +378,27 @@ export class HomeModelImpl extends Disposable implements HomeModel, ViewSettings
     return templateWss;
   }
 
+  private async _loadWelcomeTutorial() {
+    const {templateOrg, onboardingTutorialDocId} = getGristConfig();
+    if (
+      !isFeatureEnabled('tutorials') ||
+      !templateOrg ||
+      !onboardingTutorialDocId
+    ) {
+      return;
+    }
+
+    try {
+      const doc = await this._app.api.getTemplate(onboardingTutorialDocId);
+      if (this.isDisposed()) { return; }
+
+      this.onboardingTutorial.set(doc);
+    } catch (e) {
+      console.error(e);
+      reportError('Failed to load welcome tutorial');
+    }
+  }
+
   private async _saveUserOrgPref<K extends keyof UserOrgPrefs>(key: K, value: UserOrgPrefs[K]) {
     const org = this._app.currentOrg;
     if (org) {
@@ -400,7 +411,7 @@ export class HomeModelImpl extends Disposable implements HomeModel, ViewSettings
 
 // Check if active product allows just a single workspace.
 function _isSingleWorkspaceMode(app: AppModel): boolean {
-  return app.currentFeatures.maxWorkspacesPerOrg === 1;
+  return app.currentFeatures?.maxWorkspacesPerOrg === 1;
 }
 
 // Returns a default view mode preference. We used to show 'list' for everyone. We now default to

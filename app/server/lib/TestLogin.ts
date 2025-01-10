@@ -1,4 +1,4 @@
-import {SUPPORT_EMAIL} from 'app/gen-server/lib/HomeDBManager';
+import {SUPPORT_EMAIL} from 'app/gen-server/lib/homedb/HomeDBManager';
 import {GristLoginSystem, GristServer} from 'app/server/lib/GristServer';
 import {Request} from 'express';
 
@@ -25,10 +25,8 @@ export async function getTestLoginSystem(): Promise<GristLoginSystem> {
           if (process.env.TEST_SUPPORT_API_KEY) {
             const dbManager = gristServer.getHomeDBManager();
             const user = await dbManager.getUserByLogin(SUPPORT_EMAIL);
-            if (user) {
-              user.apiKey = process.env.TEST_SUPPORT_API_KEY;
-              await user.save();
-            }
+            user.apiKey = process.env.TEST_SUPPORT_API_KEY;
+            await user.save();
           }
           return "test-login";
         },

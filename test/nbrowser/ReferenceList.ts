@@ -5,20 +5,113 @@ import {Session} from 'test/nbrowser/gristUtils';
 
 describe('ReferenceList', function() {
   this.timeout(60000);
-  setupTestSuite();
   let session: Session;
   const cleanup = setupTestSuite({team: true});
 
   before(async function() {
     session = await gu.session().teamSite.login();
-    await session.tempDoc(cleanup, 'Favorite_Films.grist');
+  });
 
-    await gu.toggleSidePanel('right');
-    await driver.find(".test-right-tab-pagewidget").click();
-    await driver.find('.test-config-data').click();
+  describe('other', function() {
+    it('fix: changing ref list with a new referenced row was not bundled', async function() {
+      // When user added a new referenced row through the RefList editor, the UI sent two separate
+      // actions. One for adding the new row, and another for updating the RefList column.
+      await session.tempNewDoc(cleanup);
+      await gu.sendActions([
+        ['ModifyColumn', 'Table1', 'B', {type: 'RefList:Table1'}],
+        ['AddRecord', 'Table1', null, {A: 'a'}],
+      ]);
+      await gu.openColumnPanel();
+      await gu.getCell('B', 1).doClick();
+      await gu.setRefShowColumn('A');
+
+      await gu.getCell('B', 1).click();
+      await gu.sendKeys(Key.ENTER, 'b');
+      await gu.waitToPass(async () => {
+        await driver.findWait('.test-ref-editor-new-item', 100).click();
+      });
+      await gu.sendKeys(Key.ENTER);
+      await gu.waitForServer();
+
+      // Check the data - use waitToPass helper, as previously it might have failed
+      // as 2 separate actions were sent.
+      await gu.waitToPass(async () => {
+        assert.deepEqual(await gu.getVisibleGridCells('A', [1, 2]), ['a', 'b']);
+        assert.deepEqual(await gu.getVisibleGridCells('B', [1, 2]), ['b', '']);
+        assert.equal(await gu.getGridRowCount(), 3);
+      });
+
+      // Now press undo once, and check that the new row is removed and the RefList is updated.
+      await gu.undo();
+      assert.deepEqual(await gu.getVisibleGridCells('A', [1]), ['a']);
+      assert.deepEqual(await gu.getVisibleGridCells('B', [1]), ['']);
+      assert.equal(await gu.getGridRowCount(), 2);
+    });
+
+    it('fix: doesnt break when table is renamed', async function() {
+      // There was a bug in this scenario:
+      // 1. Create a Ref column that targets itself
+      // 2. Fill it up
+      // 3. Change it to RefList
+      // 4. Rename the table
+      // Previously, this would cause an error, cells were displaying Errors instead of values.
+
+      // Create a table with a Ref column that targets itself.
+      await session.tempNewDoc(cleanup);
+      await gu.sendActions([
+        ['ModifyColumn', 'Table1', 'B', {type: 'Ref:Table1'}],
+        ['AddRecord', 'Table1', null, {A: 'a', B: 1}],
+        ['AddRecord', 'Table1', null, {A: 'b', B: 2}],
+        ['AddRecord', 'Table1', null, {A: 'c', B: 3}],
+      ]);
+      await gu.openColumnPanel();
+      await gu.getCell('B', 1).doClick();
+      await gu.setRefShowColumn('A');
+
+      // Now convert it to RefList.
+      await gu.setType('Reference List', {apply: true});
+
+      // Make sure we see the values.
+      assert.deepEqual(await gu.getVisibleGridCells('B', [1, 2, 3]), ['a', 'b', 'c']);
+
+      // Rename the table using widget in the section.
+      await gu.renameTable('Table1', 'Table2');
+
+      // Make sure we still see the values.
+      assert.deepEqual(await gu.getVisibleGridCells('B', [1, 2, 3]), ['a', 'b', 'c']);
+    });
+
+    it('fix: allows to delete document with self reference', async function() {
+      const docId = await session.tempNewDoc(cleanup);
+      await gu.sendActions([
+        ['AddEmptyTable', 'Table2'],
+        ['ModifyColumn', 'Table1', 'B', {type: 'RefList:Table1'}],
+        ['AddRecord', 'Table1', null, {A: 'a'}],
+        ['AddRecord', 'Table1', null, {A: 'b', B: ["L", 1]}],
+        ['AddRecord', 'Table1', null, {A: 'c', B: ["L", 2]}],
+      ]);
+
+      // Now try to delete the table.
+      await gu.removeTable('Table1');
+      await gu.checkForErrors();
+
+      // Make sure table is deleted. Previously it ended with an engine error
+      // in the 'a' row which has NULL instead of a list of ids.
+      const api = session.createHomeApi().getDocAPI(docId);
+      const tables = await api.getRows('_grist_Tables');
+      assert.deepEqual(tables.tableId, ['Table2']);
+    });
   });
 
   describe('transforms', function() {
+
+    before(async function() {
+      await session.tempDoc(cleanup, 'Favorite_Films.grist');
+      await gu.toggleSidePanel('right', 'open');
+      await driver.find(".test-right-tab-pagewidget").click();
+      await driver.find('.test-config-data').click();
+    });
+
     afterEach(() => gu.checkForErrors());
 
     it('should correctly transform references to reference lists', async function() {
@@ -79,6 +172,7 @@ describe('ReferenceList', function() {
       await gu.sendKeys(Key.ARROW_DOWN, Key.ENTER, 'The Avengers', Key.ENTER, Key.ENTER);
 
       // Check that the cells are rendered correctly.
+      await gu.resizeColumn({col: 'Favorite Film'}, 100);
       assert.deepEqual(await gu.getVisibleGridCells('Favorite Film', [1, 2, 3, 4, 5, 6]),
         [
           'Forrest Gump\nAlien',
@@ -253,6 +347,8 @@ describe('ReferenceList', function() {
       // Create a new Reference List column.
       await driver.find('.test-right-tab-field').click();
       await driver.find('.mod-add-column').click();
+      await driver.findWait('.test-new-columns-menu-add-new', 100).click();
+
       await gu.waitForServer();
       await gu.setType(/Reference List/);
       await gu.waitForServer();
@@ -271,6 +367,7 @@ describe('ReferenceList', function() {
       await driver.find('.test-fbuilder-ref-col-select').click();
       await driver.findContent('.test-select-row', /Name/).click();
       await gu.waitForServer();
+      await gu.resizeColumn({col: 'A'}, 100);
       assert.deepEqual(await gu.getVisibleGridCells(3, [1, 2, 3, 4, 5, 6]),
         ['Roger\nTom', 'Tom', 'Sydney\nBill\nEvan', '', '', '']);
 
@@ -309,7 +406,7 @@ describe('ReferenceList', function() {
       const cell = gu.getCell({col: 'A', rowNum: 1});
       await server.pauseUntil(async () => {
         assert.equal(await cell.getText(), 'Friends[1]\nFriends[2]');
-        await cell.click();
+        await gu.clickReferenceListCell(cell);
         await gu.sendKeys('5');
         // Check that the autocomplete has no items yet.
         assert.isEmpty(await driver.findAll('.test-autocomplete .test-ref-editor-new-item'));
@@ -322,7 +419,7 @@ describe('ReferenceList', function() {
       assert.equal(await cell.getText(), 'Friends[1]\nFriends[2]');
 
       // Once server is responsive, a valid value should not offer a "new item".
-      await cell.click();
+      await gu.clickReferenceListCell(cell);
       await gu.sendKeys('5');
       await driver.findWait('.test-ref-editor-item', 500);
       assert.isFalse(await driver.find('.test-ref-editor-new-item').isPresent());
@@ -579,6 +676,10 @@ describe('ReferenceList', function() {
       assert.equal(await driver.find('.cell_editor .test-tokenfield .test-tokenfield-input').value(), 'da');
       assert.equal(await driver.find('.test-ref-editor-item.selected').isPresent(), false);
 
+      // Clear the typed-in text temporarily. Something changed in a recent version of Chrome,
+      // causing the wrong item to be moused over below when the "Add New" option is visible.
+      await driver.sendKeys(Key.BACK_SPACE, Key.BACK_SPACE);
+
       // Mouse over an item.
       await driver.findContent('.test-ref-editor-item', /Dark Gray/).mouseMove();
       assert.equal(await driver.find('.cell_editor .test-tokenfield .test-tokenfield-input').value(), 'Dark Gray');
@@ -586,10 +687,12 @@ describe('ReferenceList', function() {
 
       // Mouse back out of the dropdown
       await driver.find('.cell_editor .test-tokenfield .test-tokenfield-input').mouseMove();
-      assert.equal(await driver.find('.cell_editor .test-tokenfield .test-tokenfield-input').value(), 'da');
+      assert.equal(await driver.find('.cell_editor .test-tokenfield .test-tokenfield-input').value(), '');
       assert.equal(await driver.find('.test-ref-editor-item.selected').isPresent(), false);
 
-      // Click away and check the cell is now empty since no reference items were added.
+      // Re-enter the typed-in text and click away. Check the cell is now empty since
+      // no reference items were added.
+      await driver.sendKeys('da', Key.UP);
       await gu.getCell({section: 'References', col: 'Colors', rowNum: 1}).doClick();
       await gu.waitForServer();
       assert.equal(await cell.getText(), "");
@@ -748,7 +851,8 @@ describe('ReferenceList', function() {
     });
 
     it('should update choices as user types into textbox', async function() {
-      let cell = await gu.getCell({section: 'References', col: 'Schools', rowNum: 1}).doClick();
+      let cell = await gu.getCell({section: 'References', col: 'Schools', rowNum: 1});
+      await gu.clickReferenceListCell(cell);
       assert.equal(await cell.getText(), 'TECHNOLOGY, ARTS AND SCIENCES STUDIO');
       await driver.sendKeys('TECHNOLOGY, ARTS AND SCIENCES STUDIO');
       assert.deepEqual(await getACOptions(3), [
@@ -757,7 +861,8 @@ describe('ReferenceList', function() {
         'SCHOOL OF SCIENCE AND TECHNOLOGY',
       ]);
       await driver.sendKeys(Key.ESCAPE);
-      cell = await gu.getCell({section: 'References', col: 'Schools', rowNum: 2}).doClick();
+      cell = await gu.getCell({section: 'References', col: 'Schools', rowNum: 2});
+      await gu.clickReferenceListCell(cell);
       await driver.sendKeys('stuy');
       assert.deepEqual(await getACOptions(3), [
         'STUYVESANT HIGH SCHOOL',
@@ -788,7 +893,8 @@ describe('ReferenceList', function() {
     it('should highlight matching parts of items', async function() {
       await driver.sendKeys(Key.HOME);
 
-      let cell = await gu.getCell({section: 'References', col: 'Colors', rowNum: 2}).doClick();
+      let cell = await gu.getCell({section: 'References', col: 'Colors', rowNum: 2});
+      await gu.clickReferenceListCell(cell);
       assert.equal(await cell.getText(), 'Red');
       await driver.sendKeys(Key.ENTER, 'Red');
       await driver.findWait('.test-ref-editor-item', 1000);
@@ -800,7 +906,8 @@ describe('ReferenceList', function() {
         ['Re']);
       await driver.sendKeys(Key.ESCAPE);
 
-      cell = await gu.getCell({section: 'References', col: 'Schools', rowNum: 1}).doClick();
+      cell = await gu.getCell({section: 'References', col: 'Schools', rowNum: 1});
+      await gu.clickReferenceListCell(cell);
       await driver.sendKeys('br tech');
       assert.deepEqual(
         await driver.findContentWait('.test-ref-editor-item', /BROOKLYN TECH/, 1000).findAll('span', e => e.getText()),
@@ -817,19 +924,20 @@ describe('ReferenceList', function() {
     it('should reflect changes to the target column', async function() {
       await driver.sendKeys(Key.HOME);
 
-      const cell = await gu.getCell({section: 'References', col: 'Colors', rowNum: 4}).doClick();
+      const cell = await gu.getCell({section: 'References', col: 'Colors', rowNum: 4});
+      await gu.clickReferenceListCell(cell);
       assert.equal(await cell.getText(), '');
       await driver.sendKeys(Key.ENTER);
       assert.deepEqual(await getACOptions(2), ['Alice Blue', 'Añil']);
       await driver.sendKeys(Key.ESCAPE);
 
       // Change a color
-      await gu.getCell({section: 'Colors', col: 'Color Name', rowNum: 1}).doClick();
-      await driver.sendKeys('HAZELNUT', Key.ENTER);
+      await gu.clickReferenceListCell(await gu.getCell({section: 'Colors', col: 'Color Name', rowNum: 1}));
+      await driver.sendKeys('HAZELNUT', Key.ENTER, Key.ENTER);
       await gu.waitForServer();
 
       // See that the old value is gone from the autocomplete, and the new one is present.
-      await cell.click();
+      await gu.clickReferenceListCell(cell);
       await driver.sendKeys(Key.ENTER);
       assert.deepEqual(await getACOptions(2), ['Añil', 'Aqua']);
       await driver.sendKeys('H');
@@ -837,11 +945,11 @@ describe('ReferenceList', function() {
       await driver.sendKeys(Key.ESCAPE);
 
       // Delete a row.
-      await gu.getCell({section: 'Colors', col: 'Color Name', rowNum: 1}).doClick();
+      await gu.clickReferenceListCell(await gu.getCell({section: 'Colors', col: 'Color Name', rowNum: 1}));
       await gu.removeRow(1);
 
       // See that the value is gone from the autocomplete.
-      await cell.click();
+      await gu.clickReferenceListCell(cell);
       await driver.sendKeys('H');
       assert.deepEqual(await getACOptions(2), ['Honeydew', 'Hot Pink']);
       await driver.sendKeys(Key.ESCAPE);
@@ -854,7 +962,7 @@ describe('ReferenceList', function() {
       await gu.waitForServer();
 
       // See that the new value is visible in the autocomplete.
-      await cell.click();
+      await gu.clickReferenceListCell(cell);
       await driver.sendKeys('H');
       assert.deepEqual(await getACOptions(2), ['HELIOTROPE', 'Honeydew']);
       await driver.sendKeys(Key.BACK_SPACE);
@@ -864,7 +972,7 @@ describe('ReferenceList', function() {
       // Undo all the changes.
       await gu.undo(4);
 
-      await cell.click();
+      await gu.clickReferenceListCell(cell);
       await driver.sendKeys('H');
       assert.deepEqual(await getACOptions(2), ['Honeydew', 'Hot Pink']);
       await driver.sendKeys(Key.BACK_SPACE);

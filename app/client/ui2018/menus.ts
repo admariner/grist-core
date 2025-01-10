@@ -1,4 +1,4 @@
-import { Command } from 'app/client/components/commands';
+import { MenuCommand } from 'app/client/components/commandList';
 import { FocusLayer } from 'app/client/lib/FocusLayer';
 import { makeT } from 'app/client/lib/localization';
 import { NeedUpgradeError, reportError } from 'app/client/models/errors';
@@ -8,8 +8,11 @@ import { testId, theme, vars } from 'app/client/ui2018/cssVars';
 import { IconName } from 'app/client/ui2018/IconList';
 import { icon } from 'app/client/ui2018/icons';
 import { cssSelectBtn } from 'app/client/ui2018/select';
-import { BindableValue, Computed, dom, DomElementArg, DomElementMethod, IDomArgs,
-         MaybeObsArray, MutableObsArray, Observable, styled } from 'grainjs';
+import {
+  BindableValue, Computed, dom, DomContents, DomElementArg, DomElementMethod, IDomArgs,
+  MaybeObsArray, MutableObsArray, Observable, styled
+} from 'grainjs';
+import debounce from 'lodash/debounce';
 import * as weasel from 'popweasel';
 
 const t = makeT('menus');
@@ -47,17 +50,124 @@ export function menu(createFunc: weasel.MenuCreateFunc, options?: weasel.IMenuOp
   return weasel.menu(wrappedCreateFunc, {...defaults, ...options});
 }
 
-// TODO Weasel doesn't allow other options for submenus, but probably should.
-export type ISubMenuOptions = weasel.ISubMenuOptions & weasel.IPopupOptions;
+export interface SearchableMenuOptions {
+  searchInputPlaceholder?: string;
+}
 
+export interface SearchableMenuItem {
+  cleanText: string;
+  builder?: () => Element;
+
+  label?: string;
+  action?: (item: HTMLElement) => void;
+  args?: DomElementArg[];
+}
+
+export function searchableMenu(
+  menuItems: MaybeObsArray<SearchableMenuItem>,
+  options: SearchableMenuOptions = {}
+): DomElementArg[] {
+  const {searchInputPlaceholder} = options;
+
+  const searchValue = Observable.create(null, '');
+  const setSearchValue = debounce((value) => { searchValue.set(value); }, 100);
+
+  return [
+    menuItemStatic(
+      cssMenuSearch(
+        cssMenuSearchIcon('Search'),
+        cssMenuSearchInput(
+          dom.autoDispose(searchValue),
+          dom.on('input', (_ev, elem) => { setSearchValue(elem.value); }),
+          {placeholder: searchInputPlaceholder},
+          testId('searchable-menu-input'),
+        ),
+      ),
+    ),
+    menuDivider(),
+    dom.domComputed(searchValue, (value) => {
+      const cleanSearchValue = value.trim().toLowerCase();
+      return dom.forEach(menuItems, (item) => {
+        if (!item.cleanText.includes(cleanSearchValue)) { return null; }
+        if (item.label && item.action) {
+          return menuItem(item.action, item.label, ...(item.args || []));
+        } else if (item.builder) {
+          return item.builder();
+        } else {
+          throw new Error('Invalid menu item');
+        }
+      });
+    }),
+    testId('searchable-menu'),
+  ];
+}
+
+
+
+// TODO Weasel doesn't allow other options for submenus, but probably should.
+export type ISubMenuOptions =
+  weasel.ISubMenuOptions &
+  weasel.IPopupOptions &
+  {allowNothingSelected?: boolean};
+
+/**
+ * Menu item with submenu
+ */
 export function menuItemSubmenu(
   submenu: weasel.MenuCreateFunc,
   options: ISubMenuOptions,
   ...args: DomElementArg[]
 ): Element {
-  return weasel.menuItemSubmenu(submenu, {...defaults, ...options}, ...args);
+  return weasel.menuItemSubmenu(
+    submenu,
+    {
+      ...defaults,
+      expandIcon: () => cssExpandIcon('Expand'),
+      menuCssClass: `${cssSubMenuElem.className} ${defaults.menuCssClass}`,
+      ...options,
+    },
+    dom.cls(cssMenuItemSubmenu.className),
+    ...args
+  );
 }
 
+/**
+ * Header with a submenu (used in collapsed menus scenarios).
+ */
+export function menuSubHeaderMenu(
+  submenu: weasel.MenuCreateFunc,
+  options: ISubMenuOptions,
+  ...args: DomElementArg[]
+): Element {
+  return menuItemSubmenu(
+    submenu,
+    {
+      ...options,
+    },
+    menuSubHeader.cls(''),
+    cssPointer.cls(''),
+    ...args,
+  );
+}
+
+export const cssEllipsisLabel = styled('div', `
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`);
+
+export const cssExpandIcon = styled(icon, `
+  position: absolute;
+  right: 4px;
+`);
+
+const cssSubMenuElem = styled('div', `
+  white-space: nowrap;
+  min-width: 200px;
+`);
+
+// TODO: menus are sometimes cut off in Safari.
+// Setting "overflow: visible fixes this, but breaks overflow elsewhere.
 export const cssMenuElem = styled('div', `
   font-family: ${vars.fontFamily};
   font-size: ${vars.mediumFontSize};
@@ -78,7 +188,7 @@ export const cssMenuElem = styled('div', `
   }
 `);
 
-const menuItemStyle = `
+export const menuItemStyle = `
   justify-content: flex-start;
   align-items: center;
   color: ${theme.menuItemFg};
@@ -93,6 +203,8 @@ const menuItemStyle = `
     --icon-color: ${theme.menuItemDisabledFg};
   }
 `;
+
+export const menuItemStatic = styled('div', menuItemStyle);
 
 export const menuCssClass = cssMenuElem.className;
 
@@ -376,17 +488,23 @@ export function selectMenu(
   items: () => DomElementArg[],
   ...args: IDomArgs<HTMLDivElement>
 ) {
-  const _menu = cssSelectMenuElem(testId('select-menu'));
   return cssSelectBtn(
     label,
     icon('Dropdown'),
-    menu(
+    listOfMenuItems(items),
+    ...args,
+  );
+}
+
+export function listOfMenuItems(items: () => DomElementArg[],) {
+  const _menu = cssSelectMenuElem(testId('select-menu'));
+  return menu(
       items,
       {
         ...weasel.defaultMenuOptions,
         menuCssClass: _menu.className + ' grist-floating-menu',
-        stretchToSelector : `.${cssSelectBtn.className}`,
-        trigger : [(triggerElem, ctl) => {
+        stretchToSelector: `.${cssSelectBtn.className}`,
+        trigger: [(triggerElem, ctl) => {
           const isDisabled = () => triggerElem.classList.contains('disabled');
           dom.onElem(triggerElem, 'click', () => isDisabled() || ctl.toggle());
           dom.onKeyElem(triggerElem as HTMLElement, 'keydown', {
@@ -395,8 +513,6 @@ export function selectMenu(
           });
         }]
       },
-    ),
-    ...args,
   );
 }
 
@@ -419,9 +535,13 @@ export const menuSubHeader = styled('div', `
   color: ${theme.menuSubheaderFg};
   font-size: ${vars.xsmallFontSize};
   text-transform: uppercase;
-  font-weight: ${vars.bigControlTextWeight};
-  padding: 8px 24px 16px 24px;
+  font-weight: ${vars.headerControlTextWeight};
+  padding: 8px 24px 8px 24px;
   cursor: default;
+`);
+
+export const cssPointer = styled('div', `
+  cursor: pointer;
 `);
 
 export const menuText = styled('div', `
@@ -434,9 +554,17 @@ export const menuText = styled('div', `
   cursor: default;
 `);
 
+
 export const menuItem = styled(weasel.menuItem, menuItemStyle);
 
 export const menuItemLink = styled(weasel.menuItemLink, menuItemStyle);
+
+// when element name is too long, it will be trimmed with ellipsis ("...")
+export function menuItemTrimmed(
+  action: (item: HTMLElement, ev: Event) => void, label: string, ...args: DomElementArg[]) {
+  return menuItem(action, cssEllipsisLabel(label), ...args);
+}
+
 
 /**
  * A version of menuItem which runs the action on next tick, allowing the menu to close even when
@@ -448,15 +576,26 @@ export const menuItemAsync: typeof weasel.menuItem = function(action, ...args) {
   return menuItem(() => setTimeout(action, 0), ...args);
 };
 
-export function menuItemCmd(cmd: Command, label: string, ...args: DomElementArg[]) {
+export function menuItemCmd(
+  cmd: MenuCommand,
+  label: string | (() => DomContents),
+  ...args: DomElementArg[]
+) {
   return menuItem(
-    cmd.run,
-    dom('span', label, testId('cmd-name')),
-    cmd.humanKeys.length ? cssCmdKey(cmd.humanKeys[0]) : null,
+    () => cmd.run(),
+    typeof label === 'string'
+          ? dom('span', label, testId('cmd-name'))
+          : dom('div', label(), testId('cmd-name')),
+    cmd.humanKeys?.length ? cssCmdKey(cmd.humanKeys[0]) : null,
     cssMenuItemCmd.cls(''), // overrides some menu item styles
     ...args
   );
 }
+
+export const menuItemCmdLabel = styled('div', `
+  display: flex;
+  align-items: center;
+`);
 
 export function menuAnnotate(text: string, ...args: DomElementArg[]) {
   return cssAnnotateMenuItem(text, ...args);
@@ -534,22 +673,25 @@ export const cssOptionRowIcon = styled(icon, `
   }
 `);
 
-const cssOptionLabel = styled('div', `
+export const cssOptionLabel = styled('div', `
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  --grist-option-label-color: ${theme.menuItemFg};
+  --grist-option-label-color-sel: ${theme.menuItemSelectedFg};
+  --grist-option-label-color-disabled: ${theme.menuItemDisabledFg};
 
   .${weasel.cssMenuItem.className} & {
-    color: ${theme.menuItemFg};
+    color: var(--grist-option-label-color);
   }
 
   .${weasel.cssMenuItem.className}-sel & {
-    color: ${theme.menuItemSelectedFg};
+    color: var(--grist-option-label-color-sel);
     background-color: ${theme.menuItemSelectedBg};
   }
 
   .${weasel.cssMenuItem.className}.disabled & {
-    color: ${theme.menuItemDisabledFg};
+    color: var(--grist-option-label-color-disabled);
   }
 `);
 
@@ -572,6 +714,15 @@ const cssInputButtonMenuElem = styled(cssMenuElem, `
 
 const cssMenuItemCmd = styled('div', `
   justify-content: space-between;
+  --icon-color: ${theme.menuItemFg};
+
+  .${weasel.cssMenuItem.className}-sel & {
+    --icon-color: ${theme.menuItemSelectedFg};
+  }
+
+  .${weasel.cssMenuItem.className}.disabled & {
+    --icon-color: ${theme.menuItemDisabledFg};
+  }
 `);
 
 const cssCmdKey = styled('span', `
@@ -583,7 +734,7 @@ const cssCmdKey = styled('span', `
     color: ${theme.menuItemIconSelectedFg};
   }
 
-  .${weasel.cssMenuItem.className}.disabled > & {
+  .${weasel.cssMenuItem.className}.disabled & {
     color: ${theme.menuItemDisabledFg};
   }
 `);
@@ -635,3 +786,94 @@ const cssCheckboxText = styled(cssLabelText, `
 const cssUpgradeTextButton = styled(textButton, `
   font-size: ${vars.smallFontSize};
 `);
+
+const cssMenuItemSubmenu = styled('div', `
+  position: relative;
+  justify-content: flex-start;
+  color: ${theme.menuItemFg};
+  --icon-color: ${theme.accentIcon};
+  .${weasel.cssMenuItem.className}-sel {
+    color: ${theme.menuItemSelectedFg};
+    --icon-color: ${theme.menuItemSelectedFg};
+  }
+  &.disabled {
+    cursor: default;
+    color: ${theme.menuItemDisabledFg};
+    --icon-color: ${theme.menuItemDisabledFg};
+  }
+`);
+
+const cssMenuSearch = styled('div', `
+  display: flex;
+  column-gap: 8px;
+  align-items: center;
+  padding: 8px 16px;
+`);
+
+const cssMenuSearchIcon = styled(icon, `
+  flex-shrink: 0;
+  --icon-color: ${theme.menuItemIconFg};
+`);
+
+const cssMenuSearchInput = styled('input', `
+  color: ${theme.inputFg};
+  background-color: ${theme.inputBg};
+  flex-grow: 1;
+  font-size: ${vars.mediumFontSize};
+  padding: 0px;
+  border: none;
+  outline: none;
+
+  &::placeholder {
+    color: ${theme.inputPlaceholderFg};
+  }
+`);
+
+type MenuDefinition = Array<MenuItem>;
+
+
+interface MenuItem {
+  label?: string;
+  header?: string;
+  action?: string | (() => void);
+  disabled?: boolean;
+  icon?: IconName;
+  shortcut?: string;
+  submenu?: MenuDefinition;
+  maxSubmenu?: number;
+  type?: 'header' | 'separator' | 'item'; // default to item.
+}
+
+export function buildMenu(definition: MenuDefinition, onclick?: (action: string) => any) {
+  function *buildMenuItems(current: MenuDefinition): IterableIterator<Element> {
+    for (const item of current) {
+      const isHeader = item.type === 'header' || item.header;
+      // If this is header with submenu.
+      if (isHeader && item.submenu) {
+        yield menuSubHeaderMenu(() => [...buildMenuItems(item.submenu!)], {}, item.header ?? item.label);
+        continue;
+      } else if (isHeader) {
+        yield menuSubHeader(item.header ?? item.label);
+        continue;
+      }
+
+      // Not a header, so it's an item or a separator.
+      if (item.type === 'separator') {
+        yield menuDivider();
+        continue;
+      }
+
+      // If this is an item with submenu.
+      if (item.submenu) {
+        yield menuItemSubmenu(() => [...buildMenuItems(item.submenu!)], {}, item.label);
+        continue;
+      }
+
+      // Not a submenu, so it's a regular item.
+      const action = typeof item.action === 'function' ? item.action : () => onclick?.(item.action as string);
+      yield menuItem(action, item.icon && menuIcon(item.icon), item.label, item.shortcut && cssCmdKey(item.shortcut));
+
+    }
+  }
+  return menu((ctl) => [...buildMenuItems(definition)], {});
+}

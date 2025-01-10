@@ -74,14 +74,12 @@ export class FormulaEditor extends NewBaseEditor {
     this._aceEditor = AceEditor.create({
       // A bit awkward, but we need to assume calcSize is not used until attach() has been called
       // and _editorPlacement created.
-      column: options.column,
       calcSize: this._calcSize.bind(this),
-      gristDoc: options.gristDoc,
       saveValueOnBlurEvent: !options.readonly,
       editorState : this.editorState,
-      readonly: options.readonly
+      readonly: options.readonly,
+      getSuggestions: this._getSuggestions.bind(this),
     });
-
 
     // For editable editor we will grab the cursor when we are in the formula editing mode.
     const cursorCommands = options.readonly ? {} : { setCursor: this._onSetCursor };
@@ -120,11 +118,12 @@ export class FormulaEditor extends NewBaseEditor {
 
     const hideErrDetails = Observable.create(this, true);
     const raisedException = Computed.create(this, use => {
-      if (!options.formulaError || !use(options.formulaError)) {
+      const formulaError = options.formulaError && use(options.formulaError);
+      if (!formulaError) {
         return null;
       }
-      const error = isRaisedException(use(options.formulaError)!) ?
-                    decodeObject(use(options.formulaError)!) as RaisedException:
+      const error = isRaisedException(formulaError) ?
+                    decodeObject(formulaError) as RaisedException:
                     new RaisedException(["Unknown error"]);
       return error;
     });
@@ -201,10 +200,7 @@ export class FormulaEditor extends NewBaseEditor {
       cssFormulaEditor.cls('-detached', this.isDetached),
       dom('div.formula_editor.formula_field_edit', testId('formula-editor'),
         this._aceEditor.buildDom((aceObj: any) => {
-          aceObj.setFontSize(11);
-          aceObj.setHighlightActiveLine(false);
-          aceObj.getSession().setUseWrapMode(false);
-          aceObj.renderer.setPadding(0);
+          initializeAceOptions(aceObj);
           const val = initialValue;
           const pos = Math.min(options.cursorPos, val.length);
           this._aceEditor.setValue(val, pos);
@@ -387,7 +383,7 @@ export class FormulaEditor extends NewBaseEditor {
 
     // If we have an error to show, ask for a larger size for formulaEditor.
     const desiredSize = {
-      width: Math.max(desiredElemSize.width, (this.options.formulaError.get() ? minFormulaErrorWidth : 0)),
+      width: Math.max(desiredElemSize.width, (this.options.formulaError?.get() ? minFormulaErrorWidth : 0)),
       // Ask for extra space for the error; we'll decide how to allocate it below.
       height: desiredElemSize.height + (errorBoxDesiredHeight - errorBoxStartHeight),
     };
@@ -403,6 +399,17 @@ export class FormulaEditor extends NewBaseEditor {
       result.height -= (errorBoxEndHeight - errorBoxStartHeight);
     }
     return result;
+  }
+
+  private _getSuggestions(prefix: string) {
+    const section = this.options.gristDoc.viewModel.activeSection();
+    // If section is disposed or is pointing to an empty row, don't try to autocomplete.
+    if (!section?.getRowId()) { return []; }
+
+    const tableId = section.table().tableId();
+    const columnId = this.options.column.colId();
+    const rowId = section.activeRowId();
+    return this.options.gristDoc.docComm.autocomplete(prefix, tableId, columnId, rowId);
   }
 
   // TODO: update regexes to unicode?
@@ -474,6 +481,7 @@ function _isInIdentifier(line: string, column: number) {
 
 /**
  * Open a formula editor. Returns a Disposable that owns the editor.
+ * This is used for the editor in the side panel.
  */
 export function openFormulaEditor(options: {
   gristDoc: GristDoc,
@@ -481,7 +489,7 @@ export function openFormulaEditor(options: {
   column?: ColumnRec,
   // Associated formula from a view field. If provided together with column, this field is used
   field?: ViewFieldRec,
-  editingFormula?: ko.Computed<boolean>,
+  editingFormula: ko.Computed<boolean>,
   // Needed to get exception value, if any.
   editRow?: DataRowModel,
   // Element over which to position the editor.
@@ -548,7 +556,7 @@ export function openFormulaEditor(options: {
     column,
     field: options.field,
   }) : undefined;
-  const editor = FormulaEditor.create(null, {
+  const editorOptions: IFormulaEditorOptions = {
     gristDoc,
     column,
     field: options.field,
@@ -562,7 +570,8 @@ export function openFormulaEditor(options: {
     cssClass: 'formula_editor_sidepane',
     readonly : false,
     canDetach: options.canDetach
-  } as IFormulaEditorOptions) as FormulaEditor;
+  };
+  const editor = FormulaEditor.create(null, editorOptions);
   editor.autoDispose(attachedHolder);
   editor.attach(refElem);
 
@@ -712,6 +721,13 @@ export function createFormulaErrorObs(owner: MultiHolder, gristDoc: GristDoc, or
   // a Computed).
   owner.autoDispose(subscribe(use => { use(origColumn.id); use(origColumn.isRealFormula); debouncedCountErrors(); }));
   return errorMessage;
+}
+
+export function initializeAceOptions(aceObj: any) {
+  aceObj.setFontSize(11);
+  aceObj.setHighlightActiveLine(false);
+  aceObj.getSession().setUseWrapMode(false);
+  aceObj.renderer.setPadding(0);
 }
 
 const cssCollapseIcon = styled(icon, `

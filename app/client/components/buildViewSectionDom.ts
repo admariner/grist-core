@@ -1,16 +1,16 @@
 import BaseView from 'app/client/components/BaseView';
 import {GristDoc} from 'app/client/components/GristDoc';
-import {ViewRec, ViewSectionRec} from 'app/client/models/DocModel';
 import {makeT} from 'app/client/lib/localization';
+import {ViewRec, ViewSectionRec} from 'app/client/models/DocModel';
 import {filterBar} from 'app/client/ui/FilterBar';
 import {cssIcon} from 'app/client/ui/RightPanelStyles';
 import {makeCollapsedLayoutMenu} from 'app/client/ui/ViewLayoutMenu';
 import {cssDotsIconWrapper, cssMenu, viewSectionMenu} from 'app/client/ui/ViewSectionMenu';
 import {buildWidgetTitle} from 'app/client/ui/WidgetTitle';
-import {getWidgetTypes} from 'app/client/ui/widgetTypes';
-import {colors, isNarrowScreenObs, mediaSmall, testId, theme} from 'app/client/ui2018/cssVars';
+import {isNarrowScreenObs, mediaSmall, testId, theme} from 'app/client/ui2018/cssVars';
 import {icon} from 'app/client/ui2018/icons';
 import {menu} from 'app/client/ui2018/menus';
+import {getWidgetTypes} from "app/client/ui/widgetTypesMap";
 import {Computed, dom, DomElementArg, Observable, styled} from 'grainjs';
 import {defaultMenuOptions} from 'popweasel';
 
@@ -65,9 +65,20 @@ export function buildViewSectionDom(options: {
   focusable?: boolean, /* defaults to true */
   tableNameHidden?: boolean,
   widgetNameHidden?: boolean,
+  renamable?: boolean,
+  hideTitleControls?: boolean,
 }) {
   const isResizing = options.isResizing ?? Observable.create(null, false);
-  const {gristDoc, sectionRowId, viewModel, draggable = true, focusable = true} = options;
+  const {
+    gristDoc,
+    sectionRowId,
+    viewModel,
+    draggable = true,
+    focusable = true,
+    tableNameHidden,
+    widgetNameHidden,
+    renamable = true,
+  } = options;
 
   // Creating normal section dom
   const vs: ViewSectionRec = gristDoc.docModel.viewSections.getRowModel(sectionRowId);
@@ -92,7 +103,12 @@ export function buildViewSectionDom(options: {
       ),
       dom.maybe((use) => use(use(viewInstance.viewSection.table).summarySourceTable), () =>
         cssSigmaIcon('Pivot', testId('sigma'))),
-      buildWidgetTitle(vs, options, testId('viewsection-title'), cssTestClick(testId("viewsection-blank"))),
+      buildWidgetTitle(
+        vs,
+        {tableNameHidden, widgetNameHidden, disabled: !renamable},
+        testId('viewsection-title'),
+        cssTestClick(testId("viewsection-blank")),
+      ),
       viewInstance.buildTitleControls(),
       dom('div.viewsection_buttons',
         dom.create(viewSectionMenu, gristDoc, vs)
@@ -128,7 +144,6 @@ const cssTestClick = styled(`div`, `
 `);
 
 const cssSigmaIcon = styled(icon, `
-  bottom: 1px;
   margin-right: 5px;
   background-color: ${theme.lightText}
 `);
@@ -186,8 +201,7 @@ const cssViewLeafInactive = styled('div', `
 // z-index ensure it's above the resizer line, since it's hard to grab otherwise
 const cssDragIcon = styled(icon, `
   visibility: hidden;
-  --icon-color: ${colors.slate};
-  top: -1px;
+  --icon-color: ${theme.lightText};
   z-index: 100;
 
   .viewsection_title:hover &.layout_grabbable {
@@ -204,7 +218,7 @@ const cssResizing = styled('div', `
 `);
 
 const cssMiniSection = styled('div.mini_section_container', `
-  --icon-color: ${colors.lightGreen};
+  --icon-color: ${theme.accentIcon};
   display: flex;
   align-items: center;
   padding-right: 8px;

@@ -8,7 +8,7 @@ var koArray = require('../lib/koArray');
 var commands = require('./commands');
 var {CustomSectionElement} = require('../lib/CustomSectionElement');
 const {ChartConfig} = require('./ChartView');
-const {Computed, dom: grainjsDom, makeTestId} = require('grainjs');
+const {Computed, dom: grainjsDom, makeTestId, Holder} = require('grainjs');
 
 const {cssRow} = require('app/client/ui/RightPanelStyles');
 const {SortFilterConfig} = require('app/client/ui/SortFilterConfig');
@@ -37,6 +37,7 @@ function ViewConfigTab(options) {
   var self = this;
   this.gristDoc = options.gristDoc;
   this.viewModel = options.viewModel;
+  this._viewSectionDataHolder = Holder.create(this);
 
   // viewModel may point to different views, but viewSectionData is a single koArray reflecting
   // the sections of the current view.
@@ -58,18 +59,21 @@ function ViewConfigTab(options) {
     return this.viewModel.activeSection().parentKey() === 'custom';}, this));
   this.isRaw = this.autoDispose(ko.computed(function() {
     return this.viewModel.activeSection().isRaw();}, this));
+  this.isRecordCard = this.autoDispose(ko.computed(function() {
+    return this.viewModel.activeSection().isRecordCard();}, this));
 
-  this.activeRawSectionData = this.autoDispose(ko.computed(function() {
-    return self.isRaw() ? ViewSectionData.create(self.viewModel.activeSection()) : null;
+  this.activeRawOrRecordCardSectionData = this.autoDispose(ko.computed(function() {
+    return self.isRaw() || self.isRecordCard()
+      ? self._viewSectionDataHolder.autoDispose(ViewSectionData.create(self.viewModel.activeSection()))
+      : null;
   }));
-
   this.activeSectionData = this.autoDispose(ko.computed(function() {
     return (
       _.find(self.viewSectionData.all(), function(sectionData) {
         return sectionData.section &&
           sectionData.section.getRowId() === self.viewModel.activeSectionId();
       })
-      || self.activeRawSectionData()
+      || self.activeRawOrRecordCardSectionData()
       || self.viewSectionData.at(0)
     );
   }));
@@ -131,34 +135,31 @@ ViewConfigTab.prototype._buildAdvancedSettingsDom = function() {
         kd.style('margin-top', '1.5rem')
       ),
       kf.row(kd.hide(isCollapsed),
-        kf.label('Table ', dom('b', kd.text(table.tableId)), ':')
-      ),
-      kf.row(kd.hide(isCollapsed),
-        kf.buttonGroup(kf.button(() => this._makeOnDemand(table),
+        dom('div', primaryButton(
           kd.text(() => table.onDemand() ? t("Unmark On-Demand") : t("Make On-Demand")),
-          dom.testId('ViewConfig_onDemandBtn')
-        ))
+          kd.style('margin-top', '1rem'),
+          dom.on('click', () => this._makeOnDemand(table)),
+          dom.testId('ViewConfig_onDemandBtn'),
+        )),
       ),
     ];
   });
 };
 
 ViewConfigTab.prototype._buildThemeDom = function() {
-  return kd.maybe(this.activeSectionData, (sectionData) => {
-    var section = sectionData.section;
-    if (this.isDetail()) {
-      const theme = Computed.create(null, (use) => use(section.themeDef));
-      theme.onWrite(val => section.themeDef.setAndSave(val));
-      return cssRow(
-        dom.autoDispose(theme),
-        select(theme, [
-          {label: t("Form"),        value: 'form'   },
-          {label: t("Compact"),     value: 'compact'},
-          {label: t("Blocks"),      value: 'blocks'  },
-        ]),
-        testId('detail-theme')
-      );
-    }
+  return kd.maybe(() => this.isDetail() ? this.activeSectionData() : null, (sectionData) => {
+    const section = sectionData.section;
+    const theme = Computed.create(null, (use) => use(section.themeDef));
+    theme.onWrite(val => section.themeDef.setAndSave(val));
+    return cssRow(
+      dom.autoDispose(theme),
+      select(theme, [
+        {label: t("Form"),        value: 'form'   },
+        {label: t("Compact"),     value: 'compact'},
+        {label: t("Blocks"),      value: 'blocks'  },
+      ]),
+      testId('detail-theme')
+    );
   });
 };
 
@@ -167,21 +168,19 @@ ViewConfigTab.prototype._buildChartConfigDom = function() {
 };
 
 ViewConfigTab.prototype._buildLayoutDom = function() {
-  return kd.maybe(this.activeSectionData, (sectionData) => {
-    if (this.isDetail()) {
-      const view = sectionData.section.viewInstance.peek();
-      const layoutEditorObs = ko.computed(() => view && view.recordLayout && view.recordLayout.layoutEditor());
-      return cssRow({style: 'margin-top: 16px;'},
-        kd.maybe(layoutEditorObs, (editor) => editor.buildFinishButtons()),
-        primaryButton(t("Edit Card Layout"),
-          dom.autoDispose(layoutEditorObs),
-          dom.on('click', () => commands.allCommands.editLayout.run()),
-          grainjsDom.hide(layoutEditorObs),
-          grainjsDom.cls('behavioral-prompt-edit-card-layout'),
-          testId('detail-edit-layout'),
-        )
-      );
-    }
+  return kd.maybe(() => this.isDetail() ? this.activeSectionData() : null, (sectionData) => {
+    const view = sectionData.section.viewInstance.peek();
+    const layoutEditorObs = ko.computed(() => view && view.recordLayout && view.recordLayout.layoutEditor());
+    return cssRow({style: 'margin-top: 16px;'},
+      kd.maybe(layoutEditorObs, (editor) => editor.buildFinishButtons()),
+      primaryButton(t("Edit Card Layout"),
+        dom.autoDispose(layoutEditorObs),
+        dom.on('click', () => commands.allCommands.editLayout.run()),
+        grainjsDom.hide(layoutEditorObs),
+        grainjsDom.cls('behavioral-prompt-edit-card-layout'),
+        testId('detail-edit-layout'),
+      )
+    );
   });
 };
 

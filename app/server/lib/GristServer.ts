@@ -1,18 +1,26 @@
+import { ICustomWidget } from 'app/common/CustomWidget';
 import { GristDeploymentType, GristLoadConfig } from 'app/common/gristUrls';
-import { FullUser, UserProfile } from 'app/common/UserAPI';
+import { LocalPlugin } from 'app/common/plugin';
+import { SandboxInfo } from 'app/common/SandboxInfo';
+import { UserProfile } from 'app/common/UserAPI';
 import { Document } from 'app/gen-server/entity/Document';
 import { Organization } from 'app/gen-server/entity/Organization';
+import { User } from 'app/gen-server/entity/User';
 import { Workspace } from 'app/gen-server/entity/Workspace';
 import { Activations } from 'app/gen-server/lib/Activations';
-import { HomeDBManager } from 'app/gen-server/lib/HomeDBManager';
+import { HomeDBManager } from 'app/gen-server/lib/homedb/HomeDBManager';
 import { IAccessTokens } from 'app/server/lib/AccessTokens';
 import { RequestWithLogin } from 'app/server/lib/Authorizer';
 import { Comm } from 'app/server/lib/Comm';
 import { create } from 'app/server/lib/create';
 import { Hosts } from 'app/server/lib/extractOrg';
+import { GristJobs } from 'app/server/lib/GristJobs';
+import { createNullAuditLogger, IAuditLogger } from 'app/server/lib/IAuditLogger';
+import { IBilling } from 'app/server/lib/IBilling';
 import { ICreate } from 'app/server/lib/ICreate';
 import { IDocStorageManager } from 'app/server/lib/IDocStorageManager';
 import { INotifier } from 'app/server/lib/INotifier';
+import { InstallAdmin } from 'app/server/lib/InstallAdmin';
 import { IPermitStore } from 'app/server/lib/Permit';
 import { ISendAppPageOptions } from 'app/server/lib/sendAppPage';
 import { fromCallback } from 'app/server/lib/serverUtils';
@@ -20,6 +28,7 @@ import { Sessions } from 'app/server/lib/Sessions';
 import { ITelemetry } from 'app/server/lib/Telemetry';
 import * as express from 'express';
 import { IncomingMessage } from 'http';
+import { IGristCoreConfig, loadGristCoreConfig } from "./configCore";
 
 /**
  * Basic information about a Grist server.  Accessible in many
@@ -27,9 +36,10 @@ import { IncomingMessage } from 'http';
  */
 export interface GristServer {
   readonly create: ICreate;
-  settings?: Readonly<Record<string, unknown>>;
+  settings?: IGristCoreConfig;
   getHost(): string;
   getHomeUrl(req: express.Request, relPath?: string): string;
+  getHomeInternalUrl(relPath?: string): string;
   getHomeUrlByDocId(docId: string, relPath?: string): Promise<string>;
   getOwnUrl(): string;
   getOrgUrl(orgKey: string|number): Promise<string>;
@@ -44,19 +54,33 @@ export interface GristServer {
   getDeploymentType(): GristDeploymentType;
   getHosts(): Hosts;
   getActivations(): Activations;
+  getInstallAdmin(): InstallAdmin;
   getHomeDBManager(): HomeDBManager;
   getStorageManager(): IDocStorageManager;
+  getAuditLogger(): IAuditLogger;
   getTelemetry(): ITelemetry;
+  hasNotifier(): boolean;
   getNotifier(): INotifier;
   getDocTemplate(): Promise<DocTemplate>;
   getTag(): string;
   sendAppPage(req: express.Request, resp: express.Response, options: ISendAppPageOptions): Promise<void>;
   getAccessTokens(): IAccessTokens;
+  resolveLoginSystem(): Promise<GristLoginSystem>;
+  getPluginUrl(): string|undefined;
+  getPlugins(): LocalPlugin[];
+  servesPlugins(): boolean;
+  getBundledWidgets(): ICustomWidget[];
+  getBootKey(): string|undefined;
+  getSandboxInfo(): Promise<SandboxInfo>;
+  getInfo(key: string): any;
+  getJobs(): GristJobs;
+  getBilling(): IBilling;
+  setRestrictedMode(restrictedMode?: boolean): void;
 }
 
 export interface GristLoginSystem {
   getMiddleware(gristServer: GristServer): Promise<GristLoginMiddleware>;
-  deleteUser(user: FullUser): Promise<void>;
+  deleteUser(user: User): Promise<void>;
 }
 
 export interface GristLoginMiddleware {
@@ -71,10 +95,11 @@ export interface GristLoginMiddleware {
   getWildcardMiddleware?(): express.RequestHandler[];
   // Returns arbitrary string for log.
   addEndpoints(app: express.Express): Promise<string>;
-  // Optionally, extract profile from request. Result can be a profile,
-  // or null if anonymous (and other methods of determining profile such
-  // as a cookie should not be used), or undefined to use other methods.
-  getProfile?(req: express.Request|IncomingMessage): Promise<UserProfile|null|undefined>;
+  // Normally, the profile is obtained from the user's session object, which is set at login, and
+  // is identified by a session cookie. When given, overrideProfile() will be called first to
+  // extract the profile from each request. Result can be a profile, or null if anonymous
+  // (sessions will then not be used), or undefined to fall back to using session info.
+  overrideProfile?(req: express.Request|IncomingMessage): Promise<UserProfile|null|undefined>;
   // Called on first visit to an app page after a signup, for reporting or telemetry purposes.
   onFirstVisit?(req: express.Request): void;
 }
@@ -109,9 +134,10 @@ export interface DocTemplate {
 export function createDummyGristServer(): GristServer {
   return {
     create,
-    settings: {},
+    settings: loadGristCoreConfig(),
     getHost() { return 'localhost:4242'; },
     getHomeUrl() { return 'http://localhost:4242'; },
+    getHomeInternalUrl() { return 'http://localhost:4242'; },
     getHomeUrlByDocId() { return Promise.resolve('http://localhost:4242'); },
     getMergedOrgUrl() { return 'http://localhost:4242'; },
     getOwnUrl() { return 'http://localhost:4242'; },
@@ -125,23 +151,38 @@ export function createDummyGristServer(): GristServer {
     getDeploymentType() { return 'core'; },
     getHosts() { throw new Error('no hosts'); },
     getActivations() { throw new Error('no activations'); },
+    getInstallAdmin() { throw new Error('no install admin'); },
     getHomeDBManager() { throw new Error('no db'); },
     getStorageManager() { throw new Error('no storage manager'); },
+    getAuditLogger() { return createNullAuditLogger(); },
     getTelemetry() { return createDummyTelemetry(); },
     getNotifier() { throw new Error('no notifier'); },
+    hasNotifier() { return false; },
     getDocTemplate() { throw new Error('no doc template'); },
     getTag() { return 'tag'; },
     sendAppPage() { return Promise.resolve(); },
     getAccessTokens() { throw new Error('no access tokens'); },
+    resolveLoginSystem() { throw new Error('no login system'); },
+    getPluginUrl() { return undefined; },
+    servesPlugins() { return false; },
+    getPlugins() { return []; },
+    getBundledWidgets() { return []; },
+    getBootKey() { return undefined; },
+    getSandboxInfo() { throw new Error('no sandbox'); },
+    getInfo(key: string) { return undefined; },
+    getJobs(): GristJobs { throw new Error('no job system'); },
+    getBilling() { throw new Error('no billing'); },
+    setRestrictedMode() { /* do nothing */ },
   };
 }
 
 export function createDummyTelemetry(): ITelemetry {
   return {
     addEndpoints() { /* do nothing */ },
-    addPages() { /* do nothing */ },
     start() { return Promise.resolve(); },
-    logEvent() { return Promise.resolve(); },
+    logEvent() { /* do nothing */ },
+    logEventAsync() { return Promise.resolve(); },
+    shouldLogEvent() { return false; },
     getTelemetryConfig() { return undefined; },
     fetchTelemetryPrefs() { return Promise.resolve(); },
   };

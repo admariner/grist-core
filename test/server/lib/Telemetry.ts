@@ -8,12 +8,24 @@ import {assert} from 'chai';
 import * as sinon from 'sinon';
 import {TestServer} from 'test/gen-server/apiUtils';
 import {configForUser} from 'test/gen-server/testUtils';
+import * as testUtils from 'test/server/testUtils';
 
 const chimpy = configForUser('Chimpy');
 const kiwi = configForUser('Kiwi');
 const anon = configForUser('Anonymous');
 
 describe('Telemetry', function() {
+  let oldEnv: testUtils.EnvironmentSnapshot;
+
+  before(async function() {
+    oldEnv = new testUtils.EnvironmentSnapshot();
+    process.env.TYPEORM_DATABASE = ':memory:';
+  });
+
+  after(function() {
+    oldEnv.restore();
+  });
+
   const variants: [GristDeploymentType, TelemetryLevel, PrefSource][] = [
     ['saas', 'off', 'environment-variable'],
     ['saas', 'limited', 'environment-variable'],
@@ -98,7 +110,7 @@ describe('Telemetry', function() {
         if (deploymentType === 'saas') {
           it('logs telemetry events', async function() {
             if (telemetryLevel === 'limited') {
-              await telemetry.logEvent('documentOpened', {
+              telemetry.logEvent(null, 'documentOpened', {
                 limited: {
                   docIdDigest: 'digest',
                   isPublic: false,
@@ -117,7 +129,7 @@ describe('Telemetry', function() {
             }
 
             if (telemetryLevel === 'full') {
-              await telemetry.logEvent('documentOpened', {
+              telemetry.logEvent(null, 'documentOpened', {
                 limited: {
                   docIdDigest: 'digest',
                   isPublic: false,
@@ -145,13 +157,14 @@ describe('Telemetry', function() {
         } else {
           it('forwards telemetry events', async function() {
             if (telemetryLevel === 'limited') {
-              await telemetry.logEvent('documentOpened', {
+              telemetry.logEvent(null, 'documentOpened', {
                 limited: {
                   docIdDigest: 'digest',
                   isPublic: false,
                 },
               });
               assert.deepEqual(forwardEventSpy.lastCall.args, [
+                null,
                 'documentOpened',
                 {
                   docIdDigest: 'dige:Vq9L3nCkeufQ8euzDkXtM2Fl1cnsALqakjEeM6QlbXQ=',
@@ -162,7 +175,7 @@ describe('Telemetry', function() {
             }
 
             if (telemetryLevel === 'full') {
-              await telemetry.logEvent('documentOpened', {
+              telemetry.logEvent(null, 'documentOpened', {
                 limited: {
                   docIdDigest: 'digest',
                   isPublic: false,
@@ -172,6 +185,7 @@ describe('Telemetry', function() {
                 },
               });
               assert.deepEqual(forwardEventSpy.lastCall.args, [
+                null,
                 'documentOpened',
                 {
                   docIdDigest: 'dige:Vq9L3nCkeufQ8euzDkXtM2Fl1cnsALqakjEeM6QlbXQ=',
@@ -188,7 +202,7 @@ describe('Telemetry', function() {
         }
       } else {
         it('does not log telemetry events', async function() {
-          await telemetry.logEvent('documentOpened', {
+          telemetry.logEvent(null, 'documentOpened', {
             limited: {
               docIdDigest: 'digest',
               isPublic: false,
@@ -202,14 +216,14 @@ describe('Telemetry', function() {
       if (telemetryLevel !== 'off') {
         it('throws an error when an event is invalid', async function() {
           await assert.isRejected(
-            telemetry.logEvent('invalidEvent' as TelemetryEvent, {limited: {method: 'GET'}}),
+            telemetry.logEventAsync(null, 'invalidEvent' as TelemetryEvent, {limited: {method: 'GET'}}),
             /Unknown telemetry event: invalidEvent/
           );
         });
 
         it("throws an error when an event's metadata is invalid", async function() {
           await assert.isRejected(
-            telemetry.logEvent('documentOpened', {limited: {invalidMetadata: 'GET'}}),
+            telemetry.logEventAsync(null, 'documentOpened', {limited: {invalidMetadata: 'GET'}}),
             /Unknown metadata for telemetry event documentOpened: invalidMetadata/
           );
         });
@@ -217,7 +231,7 @@ describe('Telemetry', function() {
         if (telemetryLevel === 'limited') {
           it("throws an error when an event's metadata requires an elevated telemetry level", async function() {
             await assert.isRejected(
-              telemetry.logEvent('documentOpened', {limited: {userId: 1}}),
+              telemetry.logEventAsync(null, 'documentOpened', {limited: {userId: 1}}),
               // eslint-disable-next-line max-len
               /Telemetry metadata userId of event documentOpened requires a minimum telemetry level of 2 but the current level is 1/
             );
@@ -239,9 +253,11 @@ describe('Telemetry', function() {
             if (telemetryLevel === 'limited') {
               assert.deepEqual(metadata, {
                 eventName: 'watchedVideoTour',
+                eventCategory: 'Welcome',
                 eventSource: `grist-${deploymentType}`,
                 watchTimeSeconds: 30,
                 installationId,
+                isInternalUser: true,
               });
             } else {
               assert.containsAllKeys(metadata, [
@@ -297,7 +313,7 @@ describe('Telemetry', function() {
                 limited: {watchTimeSeconds: 30},
               },
             }, chimpy);
-            const [event, metadata] = forwardEventSpy.lastCall.args;
+            const [, event, metadata] = forwardEventSpy.lastCall.args;
             assert.equal(event, 'watchedVideoTour');
             if (telemetryLevel === 'limited') {
               assert.deepEqual(metadata, {
@@ -318,7 +334,7 @@ describe('Telemetry', function() {
             } else {
               // The count below includes 2 apiUsage events triggered as side effects.
               assert.equal(forwardEventSpy.callCount, 4);
-              assert.equal(forwardEventSpy.thirdCall.args[0], 'apiUsage');
+              assert.equal(forwardEventSpy.thirdCall.args[1], 'apiUsage');
             }
             assert.isEmpty(loggedEvents);
           });
@@ -333,7 +349,7 @@ describe('Telemetry', function() {
 
             // Log enough events simultaneously to cause some to be skipped. (The limit is 25.)
             for (let i = 0; i < 30; i++) {
-              void telemetry.logEvent('documentOpened', {
+              void telemetry.logEvent(null, 'documentOpened', {
                 limited: {
                   docIdDigest: 'digest',
                   isPublic: false,
@@ -348,7 +364,7 @@ describe('Telemetry', function() {
         }
       } else {
         it('does not log telemetry events sent to /api/telemetry', async function() {
-          await telemetry.logEvent('apiUsage', {limited: {method: 'GET'}});
+          telemetry.logEvent(null, 'apiUsage', {limited: {method: 'GET'}});
           assert.isEmpty(loggedEvents);
           assert.equal(forwardEventSpy.callCount, 0);
         });
@@ -377,17 +393,9 @@ describe('Telemetry', function() {
       sandbox.restore();
     });
 
-    it('GET /install/prefs returns 200 for non-default users', async function() {
+    it('GET /install/prefs returns 403 for non-default users', async function() {
       const resp = await axios.get(`${homeUrl}/api/install/prefs`, kiwi);
-      assert.equal(resp.status, 200);
-      assert.deepEqual(resp.data, {
-        telemetry: {
-          telemetryLevel: {
-            value: 'off',
-            source: 'preferences',
-          },
-        },
-      });
+      assert.equal(resp.status, 403);
     });
 
     it('GET /install/prefs returns 200 for the default user', async function() {

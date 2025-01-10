@@ -1,14 +1,16 @@
 import {ActionSummary} from 'app/common/ActionSummary';
-import {ApplyUAResult, ForkResult, PermissionDataWithExtraUsers, QueryFilters} from 'app/common/ActiveDocAPI';
+import {ApplyUAResult, ForkResult, FormulaTimingInfo,
+        PermissionDataWithExtraUsers, QueryFilters, TimingStatus} from 'app/common/ActiveDocAPI';
 import {AssistanceRequest, AssistanceResponse} from 'app/common/AssistancePrompts';
 import {BaseAPI, IOptions} from 'app/common/BaseAPI';
 import {BillingAPI, BillingAPIImpl} from 'app/common/BillingAPI';
 import {BrowserSettings} from 'app/common/BrowserSettings';
 import {ICustomWidget} from 'app/common/CustomWidget';
-import {BulkColValues, TableColValues, TableRecordValue, TableRecordValues, UserAction} from 'app/common/DocActions';
+import {BulkColValues, TableColValues, TableRecordValue, TableRecordValues,
+        TableRecordValuesWithoutIds, UserAction} from 'app/common/DocActions';
 import {DocCreationInfo, OpenDocMode} from 'app/common/DocListAPI';
 import {OrgUsageSummary} from 'app/common/DocUsage';
-import {Product} from 'app/common/Features';
+import {Features, Product} from 'app/common/Features';
 import {isClient} from 'app/common/gristUrls';
 import {encodeQueryParams} from 'app/common/gutil';
 import {FullUser, UserProfile} from 'app/common/LoginSessionAPI';
@@ -21,6 +23,7 @@ import {
   WebhookUpdate
 } from 'app/common/Triggers';
 import {addCurrentOrgToPath, getGristConfig} from 'app/common/urlUtils';
+import { AxiosProgressEvent } from 'axios';
 import omitBy from 'lodash/omitBy';
 
 
@@ -31,6 +34,9 @@ export const ANONYMOUS_USER_EMAIL = 'anon@getgrist.com';
 
 // Nominal email address of a user who, if you share with them, everyone gets access.
 export const EVERYONE_EMAIL = 'everyone@getgrist.com';
+
+// Nominal email address of a user who can view anything (for thumbnails).
+export const PREVIEWER_EMAIL = 'thumbnail@getgrist.com';
 
 // A special 'docId' that means to create a new document.
 export const NEW_DOCUMENT_CODE = 'new';
@@ -73,8 +79,10 @@ export interface BillingAccount {
   id: number;
   individual: boolean;
   product: Product;
+  stripePlanId: string; // Stripe price id.
   isManager: boolean;
   inGoodStanding: boolean;
+  features: Features;
   externalOptions?: {
     invoiceId?: string;
   };
@@ -136,7 +144,7 @@ export interface DocumentOptions {
 
 export interface TutorialMetadata {
   lastSlideIndex?: number;
-  numSlides?: number;
+  percentComplete?: number;
 }
 
 export interface DocumentProperties extends CommonProperties {
@@ -243,8 +251,13 @@ export function getUserRoleText(user: UserAccessData) {
   return roleNames[user.access!] || user.access || 'no access';
 }
 
+export interface ExtendedUser extends FullUser {
+  helpScoutSignature?: string;
+  isInstallAdmin?: boolean;     // Set if user is allowed to manage this installation.
+}
+
 export interface ActiveSessionInfo {
-  user: FullUser & {helpScoutSignature?: string};
+  user: ExtendedUser;
   org: Organization|null;
   orgError?: OrgError;
 }
@@ -340,6 +353,11 @@ export interface DocStateComparisonDetails {
   rightChanges: ActionSummary;
 }
 
+export interface CopyDocOptions {
+  documentName: string;
+  asTemplate?: boolean;
+}
+
 export interface UserAPI {
   getSessionActive(): Promise<ActiveSessionInfo>;
   setSessionActive(email: string, org?: string): Promise<void>;
@@ -347,14 +365,16 @@ export interface UserAPI {
   getOrgs(merged?: boolean): Promise<Organization[]>;
   getWorkspace(workspaceId: number): Promise<Workspace>;
   getOrg(orgId: number|string): Promise<Organization>;
-  getOrgWorkspaces(orgId: number|string): Promise<Workspace[]>;
+  getOrgWorkspaces(orgId: number|string, includeSupport?: boolean): Promise<Workspace[]>;
   getOrgUsageSummary(orgId: number|string): Promise<OrgUsageSummary>;
-  getTemplates(onlyFeatured?: boolean): Promise<Workspace[]>;
+  getTemplates(): Promise<Workspace[]>;
+  getTemplate(docId: string): Promise<Document>;
   getDoc(docId: string): Promise<Document>;
   newOrg(props: Partial<OrganizationProperties>): Promise<number>;
   newWorkspace(props: Partial<WorkspaceProperties>, orgId: number|string): Promise<number>;
   newDoc(props: Partial<DocumentProperties>, workspaceId: number): Promise<string>;
   newUnsavedDoc(options?: {timezone?: string}): Promise<string>;
+  copyDoc(sourceDocumentId: string, workspaceId: number, options: CopyDocOptions): Promise<string>;
   renameOrg(orgId: number|string, name: string): Promise<void>;
   renameWorkspace(workspaceId: number, name: string): Promise<void>;
   renameDoc(docId: string, name: string): Promise<void>;
@@ -393,12 +413,26 @@ export interface UserAPI {
   importUnsavedDoc(material: UploadType, options?: {
     filename?: string,
     timezone?: string,
-    onUploadProgress?: (ev: ProgressEvent) => void,
+    onUploadProgress?: (ev: AxiosProgressEvent) => void,
   }): Promise<string>;
   deleteUser(userId: number, name: string): Promise<void>;
   getBaseUrl(): string;  // Get the prefix for all the endpoints this object wraps.
   forRemoved(): UserAPI; // Get a version of the API that works on removed resources.
   getWidgets(): Promise<ICustomWidget[]>;
+  /**
+   * Deletes account and personal org with all documents. Note: deleteUser doesn't clear documents, and this method
+   * is specific to Grist installation, and might not be supported. Pass current user's id so that we can verify
+   * that the user is deleting their own account. This is just to prevent accidental deletion from multiple tabs.
+   *
+   * @returns true if the account was deleted, false if there was a mismatch with the current user's id, and the
+   * account was probably already deleted.
+   */
+  closeAccount(userId: number): Promise<boolean>;
+  /**
+   * Deletes current non personal org with all documents. Note: deleteOrg doesn't clear documents, and this method
+   * is specific to Grist installation, and might not be supported.
+   */
+  closeOrg(): Promise<void>;
 }
 
 /**
@@ -416,6 +450,10 @@ interface GetRowsParams {
   immediate?: boolean;
 }
 
+interface SqlResult extends TableRecordValuesWithoutIds {
+  statement: string;
+}
+
 /**
  * Collect endpoints related to the content of a single document that we've been thinking
  * of as the (restful) "Doc API".  A few endpoints that could be here are not, for historical
@@ -427,6 +465,7 @@ export interface DocAPI {
   // opening a document are irrelevant.
   getRows(tableId: string, options?: GetRowsParams): Promise<TableColValues>;
   getRecords(tableId: string, options?: GetRowsParams): Promise<TableRecordValue[]>;
+  sql(sql: string, args?: any[]): Promise<SqlResult>;
   updateRows(tableId: string, changes: TableColValues): Promise<number[]>;
   addRows(tableId: string, additions: BulkColValues): Promise<number[]>;
   removeRows(tableId: string, removals: number[]): Promise<number[]>;
@@ -450,6 +489,8 @@ export interface DocAPI {
   getDownloadUrl(options: {template: boolean, removeHistory: boolean}): string;
   getDownloadXlsxUrl(params?: DownloadDocParams): string;
   getDownloadCsvUrl(params: DownloadDocParams): string;
+  getDownloadTsvUrl(params: DownloadDocParams): string;
+  getDownloadDsvUrl(params: DownloadDocParams): string;
   getDownloadTableSchemaUrl(params: DownloadDocParams): string;
   /**
    * Exports current document to the Google Drive as a spreadsheet file. To invoke this method, first
@@ -474,6 +515,20 @@ export interface DocAPI {
   flushWebhook(webhookId: string): Promise<void>;
 
   getAssistance(params: AssistanceRequest): Promise<AssistanceResponse>;
+  /**
+   * Check if the document is currently in timing mode.
+   * Status is either
+   * - 'active' if timings are enabled.
+   * - 'pending' if timings are enabled but we can't get the data yet (as engine is blocked)
+   * - 'disabled' if timings are disabled.
+   */
+  timing(): Promise<TimingStatus>;
+  /**
+   * Starts recording timing information for the document. Throws exception if timing is already
+   * in progress or you don't have permission to start timing.
+   */
+  startTiming(): Promise<void>;
+  stopTiming(): Promise<FormulaTimingInfo[]>;
 }
 
 // Operations that are supported by a doc worker.
@@ -520,8 +575,8 @@ export class UserAPIImpl extends BaseAPI implements UserAPI {
     return this.requestJson(`${this._url}/api/orgs/${orgId}`, { method: 'GET' });
   }
 
-  public async getOrgWorkspaces(orgId: number|string): Promise<Workspace[]> {
-    return this.requestJson(`${this._url}/api/orgs/${orgId}/workspaces?includeSupport=1`,
+  public async getOrgWorkspaces(orgId: number|string, includeSupport = true): Promise<Workspace[]> {
+    return this.requestJson(`${this._url}/api/orgs/${orgId}/workspaces?includeSupport=${includeSupport ? 1 : 0}`,
       { method: 'GET' });
   }
 
@@ -529,8 +584,12 @@ export class UserAPIImpl extends BaseAPI implements UserAPI {
     return this.requestJson(`${this._url}/api/orgs/${orgId}/usage`, { method: 'GET' });
   }
 
-  public async getTemplates(onlyFeatured: boolean = false): Promise<Workspace[]> {
-    return this.requestJson(`${this._url}/api/templates?onlyFeatured=${onlyFeatured ? 1 : 0}`, { method: 'GET' });
+  public async getTemplates(): Promise<Workspace[]> {
+    return this.requestJson(`${this._url}/api/templates`, { method: 'GET' });
+  }
+
+  public async getTemplate(docId: string): Promise<Document> {
+    return this.requestJson(`${this._url}/api/templates/${docId}`, { method: 'GET' });
   }
 
   public async getWidgets(): Promise<ICustomWidget[]> {
@@ -566,6 +625,21 @@ export class UserAPIImpl extends BaseAPI implements UserAPI {
     return this.requestJson(`${this._url}/api/docs`, {
       method: 'POST',
       body: JSON.stringify(options),
+    });
+  }
+
+  public async copyDoc(
+    sourceDocumentId: string,
+    workspaceId: number,
+    options: CopyDocOptions
+  ): Promise<string> {
+    return this.requestJson(`${this._url}/api/docs`, {
+      method: 'POST',
+      body: JSON.stringify({
+        sourceDocumentId,
+        workspaceId,
+        ...options,
+      }),
     });
   }
 
@@ -714,11 +788,11 @@ export class UserAPIImpl extends BaseAPI implements UserAPI {
   }
 
   public async getWorker(key: string): Promise<string> {
-    const json = await this.requestJson(`${this._url}/api/worker/${key}`, {
+    const json = (await this.requestJson(`${this._url}/api/worker/${key}`, {
       method: 'GET',
       credentials: 'include'
-    });
-    return getDocWorkerUrl(this._homeUrl, json);
+    })) as PublicDocWorkerUrlInfo;
+    return getPublicDocWorkerUrl(this._homeUrl, json);
   }
 
   public async getWorkerAPI(key: string): Promise<DocWorkerAPI> {
@@ -768,7 +842,7 @@ export class UserAPIImpl extends BaseAPI implements UserAPI {
   public async importUnsavedDoc(material: UploadType, options?: {
     filename?: string,
     timezone?: string,
-    onUploadProgress?: (ev: ProgressEvent) => void,
+    onUploadProgress?: (ev: AxiosProgressEvent) => void,
   }): Promise<string> {
     options = options || {};
     const formData = this.newFormData();
@@ -790,6 +864,14 @@ export class UserAPIImpl extends BaseAPI implements UserAPI {
     await this.request(`${this._url}/api/users/${userId}`,
                        {method: 'DELETE',
                         body: JSON.stringify({name})});
+  }
+
+  public async closeAccount(userId: number): Promise<boolean> {
+    return await this.requestJson(`${this._url}/api/doom/account?userid=` + userId, {method: 'DELETE'});
+  }
+
+  public async closeOrg() {
+    await this.request(`${this._url}/api/doom/org`, {method: 'DELETE'});
   }
 
   public getBaseUrl(): string { return this._url; }
@@ -864,6 +946,8 @@ export class DocAPIImpl extends BaseAPI implements DocAPI {
     this._url = `${url}/api/docs/${docId}`;
   }
 
+  public getBaseUrl(): string { return this._url; }
+
   public async getRows(tableId: string, options?: GetRowsParams): Promise<TableColValues> {
     return this._getRecords(tableId, 'data', options);
   }
@@ -871,6 +955,16 @@ export class DocAPIImpl extends BaseAPI implements DocAPI {
   public async getRecords(tableId: string, options?: GetRowsParams): Promise<TableRecordValue[]> {
     const response: TableRecordValues = await this._getRecords(tableId, 'records', options);
     return response.records;
+  }
+
+  public async sql(sql: string, args?: any[]): Promise<SqlResult> {
+    return this.requestJson(`${this._url}/sql`, {
+      body: JSON.stringify({
+        sql,
+        ...(args ? { args } : {}),
+      }),
+      method: 'POST',
+    });
   }
 
   public async updateRows(tableId: string, changes: TableColValues): Promise<number[]> {
@@ -984,6 +1078,14 @@ export class DocAPIImpl extends BaseAPI implements DocAPI {
      return this.requestJson(`${this._url}/compare/${remoteDocId}${q}`);
   }
 
+  public async copyDoc(workspaceId: number, options: CopyDocOptions): Promise<string> {
+    const {documentName, asTemplate} = options;
+    return this.requestJson(`${this._url}/copy`, {
+      body: JSON.stringify({workspaceId, documentName, asTemplate}),
+      method: 'POST'
+     });
+  }
+
   public async compareVersion(leftHash: string, rightHash: string): Promise<DocStateComparison> {
     const url = new URL(`${this._url}/compare`);
     url.searchParams.append('left', leftHash);
@@ -1004,6 +1106,14 @@ export class DocAPIImpl extends BaseAPI implements DocAPI {
     return this._url + '/download/csv?' + encodeQueryParams({...params});
   }
 
+  public getDownloadTsvUrl(params: DownloadDocParams) {
+    return this._url + '/download/tsv?' + encodeQueryParams({...params});
+  }
+
+  public getDownloadDsvUrl(params: DownloadDocParams) {
+    return this._url + '/download/dsv?' + encodeQueryParams({...params});
+  }
+
   public getDownloadTableSchemaUrl(params: DownloadDocParams) {
     // We spread `params` to work around TypeScript being overly cautious.
     return this._url + '/download/table-schema?' + encodeQueryParams({...params});
@@ -1018,7 +1128,7 @@ export class DocAPIImpl extends BaseAPI implements DocAPI {
 
   public async uploadAttachment(value: string | Blob, filename?: string): Promise<number> {
     const formData = this.newFormData();
-    formData.append('upload', value, filename);
+    formData.append('upload', value as Blob, filename);
     const response = await this.requestAxios(`${this._url}/attachments`, {
       method: 'POST',
       data: formData,
@@ -1037,6 +1147,18 @@ export class DocAPIImpl extends BaseAPI implements DocAPI {
     });
   }
 
+  public async timing(): Promise<TimingStatus> {
+    return this.requestJson(`${this._url}/timing`);
+  }
+
+  public async startTiming(): Promise<void> {
+    await this.request(`${this._url}/timing/start`, {method: 'POST'});
+  }
+
+  public async stopTiming(): Promise<FormulaTimingInfo[]> {
+    return await this.requestJson(`${this._url}/timing/stop`, {method: 'POST'});
+  }
+
   private _getRecords(tableId: string, endpoint: 'data' | 'records', options?: GetRowsParams): Promise<any> {
     const url = new URL(`${this._url}/tables/${tableId}/${endpoint}`);
     if (options?.filters) {
@@ -1050,6 +1172,27 @@ export class DocAPIImpl extends BaseAPI implements DocAPI {
 }
 
 /**
+ * Represents information to build public doc worker url.
+ *
+ * Structure that may contain either **exclusively**:
+ *  - a selfPrefix when no pool of doc worker exist.
+ *  - a public doc worker url otherwise.
+ */
+export type PublicDocWorkerUrlInfo = {
+  selfPrefix: string;
+  docWorkerUrl: null;
+} | {
+  selfPrefix: null;
+  docWorkerUrl: string;
+}
+
+export function getUrlFromPrefix(homeUrl: string, prefix: string) {
+  const url = new URL(homeUrl);
+  url.pathname = prefix + url.pathname;
+  return url.href;
+}
+
+/**
  * Get a docWorkerUrl from information returned from backend. When the backend
  * is fully configured, and there is a pool of workers, this is straightforward,
  * just return the docWorkerUrl reported by the backend. For single-instance
@@ -1057,19 +1200,13 @@ export class DocAPIImpl extends BaseAPI implements DocAPI {
  * use the homeUrl of the backend, with extra path prefix information
  * given by selfPrefix. At the time of writing, the selfPrefix contains a
  * doc-worker id, and a tag for the codebase (used in consistency checks).
+ *
+ * @param {string} homeUrl
+ * @param {string} docWorkerInfo The information to build the public doc worker url
+ *                               (result of the call to /api/worker/:docId)
  */
-export function getDocWorkerUrl(homeUrl: string, docWorkerInfo: {
-  docWorkerUrl: string|null,
-  selfPrefix?: string,
-}): string {
-  if (!docWorkerInfo.docWorkerUrl) {
-    if (!docWorkerInfo.selfPrefix) {
-      // This should never happen.
-      throw new Error('missing selfPrefix for docWorkerUrl');
-    }
-    const url = new URL(homeUrl);
-    url.pathname = docWorkerInfo.selfPrefix + url.pathname;
-    return url.href;
-  }
-  return docWorkerInfo.docWorkerUrl;
+export function getPublicDocWorkerUrl(homeUrl: string, docWorkerInfo: PublicDocWorkerUrlInfo) {
+  return docWorkerInfo.selfPrefix !== null ?
+    getUrlFromPrefix(homeUrl, docWorkerInfo.selfPrefix) :
+    docWorkerInfo.docWorkerUrl;
 }

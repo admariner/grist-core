@@ -1,20 +1,32 @@
 import BaseView from 'app/client/components/BaseView';
+import {CommandName} from 'app/client/components/commandList';
+import * as commands from 'app/client/components/commands';
 import {GristDoc} from 'app/client/components/GristDoc';
 import {hooks} from 'app/client/Hooks';
 import {get as getBrowserGlobals} from 'app/client/lib/browserGlobals';
+import {makeTestId} from 'app/client/lib/domUtils';
+import {sanitizeHttpUrl} from 'app/client/lib/sanitizeUrl';
 import {ColumnRec, ViewSectionRec} from 'app/client/models/DocModel';
-import {AccessLevel, isSatisfied} from 'app/common/CustomWidget';
+import {reportError} from 'app/client/models/errors';
+import {gristThemeObs} from 'app/client/ui2018/theme';
+import {AccessLevel, ICustomWidget, isSatisfied, matchWidget} from 'app/common/CustomWidget';
 import {DisposableWithEvents} from 'app/common/DisposableWithEvents';
 import {BulkColValues, fromTableDataAction, RowRecord} from 'app/common/DocActions';
 import {extractInfoFromColType, reencodeAsAny} from 'app/common/gristTypes';
-import {AccessTokenOptions, CustomSectionAPI, GristDocAPI, GristView,
-        InteractionOptionsRequest, WidgetAPI, WidgetColumnMap} from 'app/plugin/grist-plugin-api';
+import {getGristConfig} from 'app/common/urlUtils';
+import {
+  AccessTokenOptions, CursorPos, CustomSectionAPI, FetchSelectedOptions, GristDocAPI, GristView,
+  InteractionOptionsRequest, WidgetAPI, WidgetColumnMap
+} from 'app/plugin/grist-plugin-api';
 import {MsgType, Rpc} from 'grain-rpc';
 import {Computed, Disposable, dom, Observable} from 'grainjs';
 import noop = require('lodash/noop');
 import debounce = require('lodash/debounce');
 import isEqual = require('lodash/isEqual');
 import flatMap = require('lodash/flatMap');
+
+const testId = makeTestId('test-custom-widget-');
+
 
 /**
  * This file contains a WidgetFrame and all its components.
@@ -35,7 +47,16 @@ export interface WidgetFrameOptions {
   /**
    * Url of external page. Iframe is rebuild each time the URL changes.
    */
-  url: string;
+  url: string|null;
+  /**
+   * ID of widget, if known. When set, the url for the specified widget
+   * in the WidgetRepository, if found, will take precedence.
+   */
+  widgetId?: string|null;
+  /**
+   * ID of the plugin that provided the widget (if it came from a plugin).
+   */
+  pluginId?: string;
   /**
    * Assigned access level. Iframe is rebuild each time access level is changed.
    */
@@ -45,6 +66,13 @@ export interface WidgetFrameOptions {
    */
   readonly: boolean;
   /**
+   * If set, show the iframe after `grist.ready()`.
+   *
+   * This is used to defer showing a widget on initial load until it has finished
+   * applying the Grist theme.
+   */
+  showAfterReady?: boolean;
+  /**
    * Optional callback to configure exposed API.
    */
   configure?: (frame: WidgetFrame) => void;
@@ -52,6 +80,14 @@ export interface WidgetFrameOptions {
    * Optional handler to modify the iframe.
    */
   onElem?: (iframe: HTMLIFrameElement) => void;
+  /**
+   * Optional language to use for the widget.
+   */
+  preferences: {language?: string, timeZone?: any, currency?: string, culture?: string};
+  /**
+   * The containing document.
+   */
+  gristDoc: GristDoc;
 }
 
 /**
@@ -62,6 +98,17 @@ export class WidgetFrame extends DisposableWithEvents {
   private _rpc: Rpc;
   // Created iframe element, used to receive and post messages via Rpc
   private _iframe: HTMLIFrameElement | null;
+  // If widget called ready() method, this will be set to true.
+  private _readyCalled = Observable.create(this, false);
+  // Whether the iframe is visible.
+  private _visible = Observable.create(this, !this._options.showAfterReady);
+  private readonly _widget = Observable.create<ICustomWidget|null>(this, null);
+
+  private _url: Observable<string>;
+  /**
+   * If the widget URL is empty, it also means that we are showing the empty page.
+   */
+  private _isEmpty: Observable<boolean>;
 
   constructor(private _options: WidgetFrameOptions) {
     super();
@@ -88,6 +135,27 @@ export class WidgetFrame extends DisposableWithEvents {
 
     // Call custom configuration handler.
     _options.configure?.(this);
+
+    this._checkWidgetRepository().catch(reportError);
+
+    // Url if set.
+    const maybeUrl = Computed.create(this, use => use(this._widget)?.url || this._options.url);
+
+    // Url to widget or empty page with access level and preferences.
+    this._url = Computed.create(
+      this,
+      (use) => this._urlWithAccess(use(maybeUrl)) || this._getEmptyWidgetPage()
+    );
+
+    // Iframe is empty when url is not set.
+    this._isEmpty = Computed.create(this, use => !use(maybeUrl));
+
+    // When isEmpty is switched to true, reset the ready state.
+    this.autoDispose(this._isEmpty.addListener(isEmpty => {
+      if (isEmpty) {
+        this._readyCalled.set(false);
+      }
+    }));
   }
 
   /**
@@ -143,24 +211,43 @@ export class WidgetFrame extends DisposableWithEvents {
   }
 
   public buildDom() {
-    // Append access level to query string.
-    const urlWithAccess = (url: string) => {
-      if (!url) {
-        return url;
-      }
-      const urlObj = new URL(url);
-      urlObj.searchParams.append('access', this._options.access);
-      urlObj.searchParams.append('readonly', String(this._options.readonly));
-      return urlObj.href;
-    };
-    const fullUrl = urlWithAccess(this._options.url);
     const onElem = this._options.onElem ?? ((el: HTMLIFrameElement) => el);
-    return onElem(
-      (this._iframe = dom('iframe', dom.cls('clipboard_focus'), dom.cls('custom_view'), {
-        src: fullUrl,
-        ...hooks.iframeAttributes,
-      }))
+    this._iframe = dom(
+      'iframe',
+      dom.style('visibility', use => use(this._visible) ? 'visible' : 'hidden'),
+      dom.cls('clipboard_focus'),
+      dom.cls('custom_view'),
+      dom.attr('src', this._url),
+      hooks.iframeAttributes,
+      testId('ready', use => use(this._readyCalled) && !use(this._isEmpty)),
+      self => void onElem(self),
     );
+    return this._iframe;
+  }
+
+  // Appends access level to query string.
+  private _urlWithAccess(url: string | null): string | null {
+    if (!url) {
+      return url;
+    }
+
+    let urlObj: URL;
+    try {
+      urlObj = new URL(url);
+    } catch (e) {
+      console.error(e);
+      return null;
+    }
+    urlObj.searchParams.append('access', this._options.access);
+    urlObj.searchParams.append('readonly', String(this._options.readonly));
+    // Append user and document preferences to query string.
+    const settingsParams = new URLSearchParams(this._options.preferences);
+    settingsParams.forEach((value, key) => urlObj.searchParams.append(key, value));
+    return sanitizeHttpUrl(urlObj.href);
+  }
+
+  private _getEmptyWidgetPage(): string {
+    return new URL("custom-widget.html", getGristConfig().homeUrl!).href;
   }
 
   private _onMessage(event: MessageEvent) {
@@ -178,9 +265,26 @@ export class WidgetFrame extends DisposableWithEvents {
       }
       if (event.data.mtype === MsgType.Ready) {
         this.trigger('ready', this);
+        this._readyCalled.set(true);
+      }
+      if (event.data.data?.message === 'themeInitialized') {
+        this._visible.set(true);
       }
       this._rpc.receiveMessage(event.data);
     }
+  }
+
+  /**
+   * If we have a widgetId, look it up in the WidgetRepository and
+   * get the best URL we can for it.
+   */
+  private async _checkWidgetRepository() {
+    const {widgetId, pluginId} = this._options;
+    if (this.isDisposed() || !widgetId) { return; }
+    const widgets = await this._options.gristDoc.app.topAppModel.getWidgets();
+    if (this.isDisposed()) { return; }
+    const widget = matchWidget(widgets, {widgetId, pluginId});
+    this._widget.set(widget || null);
   }
 }
 
@@ -341,13 +445,14 @@ export class GristDocAPIImpl implements GristDocAPI {
  * GristViewAPI implemented over BaseView.
  */
 export class GristViewImpl implements GristView {
-  constructor(private _baseView: BaseView) {}
+  constructor(private _baseView: BaseView, private _access: AccessLevel) {
+  }
 
-  public async fetchSelectedTable(): Promise<any> {
+  public async fetchSelectedTable(options: FetchSelectedOptions = {}): Promise<any> {
     // If widget has a custom columns mapping, we will ignore hidden columns section.
     // Hidden/Visible columns will eventually reflect what is available, but this operation
     // is not instant - and widget can receive rows with fields that are not in the mapping.
-    const columns: ColumnRec[] = this._visibleColumns();
+    const columns: ColumnRec[] = this._visibleColumns(options);
     const rowIds = this._baseView.sortedRows.getKoArray().peek().filter(id => id != 'new');
     const data: BulkColValues = {};
     for (const column of columns) {
@@ -361,13 +466,13 @@ export class GristViewImpl implements GristView {
     return data;
   }
 
-  public async fetchSelectedRecord(rowId: number): Promise<any> {
+  public async fetchSelectedRecord(rowId: number, options: FetchSelectedOptions = {}): Promise<any> {
     // Prepare an object containing the fields available to the view
     // for the specified row.  A RECORD()-generated rendering would be
     // more useful. but the data engine needs to know what information
     // the custom view depends on, so we shouldn't volunteer any untracked
     // information here.
-    const columns: ColumnRec[] = this._visibleColumns();
+    const columns: ColumnRec[] = this._visibleColumns(options);
     const data: RowRecord = {id: rowId};
     for (const column of columns) {
       const colId: string = column.displayColModel.peek().colId.peek();
@@ -380,24 +485,55 @@ export class GristViewImpl implements GristView {
     return data;
   }
 
+  /**
+   * This is deprecated method to turn on cursor linking. Previously it was used
+   * to create a custom row id filter. Now widgets can be treated as normal source of linking.
+   * Now allowSelectBy should be set using the ready event.
+   */
   public async allowSelectBy(): Promise<void> {
-    this._baseView.viewSection.allowSelectBy.set(true);
+    this._baseView.viewSection.allowSelectBy(true);
+    // This is to preserve a legacy behavior, where when allowSelectBy is called widget expected
+    // that the filter was already applied to clear all rows.
+    this._baseView.viewSection.selectedRows([]);
   }
 
-  public async setSelectedRows(rowIds: number[]): Promise<void> {
-    this._baseView.viewSection.selectedRows.set(rowIds);
+  public async setSelectedRows(rowIds: number[]|null): Promise<void> {
+    this._baseView.viewSection.selectedRows(rowIds);
   }
 
-  private _visibleColumns() {
+  public setCursorPos(cursorPos: CursorPos): Promise<void> {
+    this._baseView.setCursorPos(cursorPos);
+    return Promise.resolve();
+  }
+
+  private _visibleColumns(options: FetchSelectedOptions): ColumnRec[] {
     const columns: ColumnRec[] = this._baseView.viewSection.columns.peek();
-    const hiddenCols = this._baseView.viewSection.hiddenColumns.peek().map(c => c.id.peek());
-    const mappings = this._baseView.viewSection.mappedColumns.peek();
-    const mappedColumns = new Set(flatMap(Object.values(mappings || {})));
-    const notHidden = (col: ColumnRec) => !hiddenCols.includes(col.id.peek());
-    const mapped = (col: ColumnRec) => mappings && mappedColumns.has(col.colId.peek());
     // If columns are mapped, return only those that are mapped.
-    // Otherwise return all not hidden columns;
-    return mappings ? columns.filter(mapped) : columns.filter(notHidden);
+    const mappings = this._baseView.viewSection.mappedColumns.peek();
+    if (mappings) {
+      const mappedColumns = new Set(flatMap(Object.values(mappings)));
+      const mapped = (col: ColumnRec) => mappedColumns.has(col.colId.peek());
+      return columns.filter(mapped);
+    } else if (options.includeColumns === 'shown' || !options.includeColumns) {
+      // Return columns that have been shown by the user, i.e. have a corresponding view field.
+      const hiddenCols = this._baseView.viewSection.hiddenColumns.peek().map(c => c.id.peek());
+      const notHidden = (col: ColumnRec) => !hiddenCols.includes(col.id.peek());
+      return columns.filter(notHidden);
+    }
+    // These options are newer and expose more data than the user may have intended,
+    // so they require full access.
+    if (this._access !== AccessLevel.full) {
+      throw new Error(
+        `Setting includeColumns to ${options.includeColumns} requires full access.` +
+        ` Current access level is ${this._access}`);
+    }
+    if (options.includeColumns === 'normal') {
+      // Return all 'normal' columns of the table, regardless of whether the user has shown them.
+      return columns;
+    } else {
+      // Return *all* columns, including special invisible columns like manualSort.
+      return this._baseView.viewSection.table.peek().columns.peek().all();
+    }
   }
 }
 
@@ -436,6 +572,27 @@ export class WidgetAPIImpl implements WidgetAPI {
   public getOption(key: string): Promise<unknown> {
     const options = this._section.activeCustomOptions.peek();
     return options?.[key];
+  }
+}
+
+const COMMAND_MINIMUM_ACCESS_LEVELS: Map<CommandName, AccessLevel> = new Map([
+  ['undo', AccessLevel.full],
+  ['redo', AccessLevel.full],
+  ['viewAsCard', AccessLevel.read_table],
+]);
+
+export class CommandAPI {
+  constructor(private _currentAccess: AccessLevel) {}
+
+  public async run(commandName: CommandName): Promise<unknown> {
+    const minimumAccess = COMMAND_MINIMUM_ACCESS_LEVELS.get(commandName);
+    if (minimumAccess === undefined || !isSatisfied(this._currentAccess, minimumAccess)) {
+      // If the command name is unrecognized, or the current access level doesn't meet the
+      // command's minimum access level, do nothing.
+      return;
+    }
+
+    return await commands.allCommands[commandName].run();
   }
 }
 
@@ -500,46 +657,77 @@ export class RecordNotifier extends BaseEventSource {
   }
 }
 
+export interface ConfigNotifierOptions {
+  access: AccessLevel;
+}
+
 /**
- * Notifies about options position change. Exposed in the API as a onOptions handler.
+ * Notifies about options changes. Exposed in the API as `onOptions`.
  */
 export class ConfigNotifier extends BaseEventSource {
-  private _currentConfig: Computed<any | null>;
-  private _debounced: () => void; // debounced call to let the view know linked cursor changed.
-  constructor(private _section: ViewSectionRec, private _accessLevel: AccessLevel) {
+  private _accessLevel = this._options.access;
+  private _currentConfig = Computed.create(this, use => {
+    const options = use(this._section.activeCustomOptions);
+    return options;
+  });
+
+  // Debounced call to let the view know linked cursor changed.
+  private _debounced = debounce((options?: {fromReady?: boolean}) => this._update(options), 0);
+
+  constructor(private _section: ViewSectionRec, private _options: ConfigNotifierOptions) {
     super();
-    this._currentConfig = Computed.create(this, use => {
-      const options = use(this._section.activeCustomOptions);
-      return options;
-    });
-    this._debounced = debounce(() => this._update(), 0);
-    const subscribe = (obs: Observable<any>) => {
-      this.autoDispose(
-        obs.addListener((cur, prev) => {
-          if (isEqual(prev, cur)) {
-            return;
-          }
-          this._debounced();
-        })
-      );
-    };
-    subscribe(this._currentConfig);
+    this.autoDispose(
+      this._currentConfig.addListener((newConfig, oldConfig) => {
+        if (isEqual(newConfig, oldConfig)) { return; }
+
+        this._debounced();
+      })
+    );
   }
 
   protected _ready() {
     // On ready, send initial configuration.
-    this._debounced();
+    this._debounced({fromReady: true});
   }
 
-  private _update() {
-    if (this.isDisposed()) {
-      return;
-    }
+  private _update({fromReady}: {fromReady?: boolean} = {}) {
+    if (this.isDisposed()) { return; }
+
     this._notify({
       options: this._currentConfig.get(),
       settings: {
         accessLevel: this._accessLevel,
       },
+      fromReady,
+    });
+  }
+}
+
+/**
+ * Notifies about theme changes. Exposed in the API as `onThemeChange`.
+ */
+export class ThemeNotifier extends BaseEventSource {
+  constructor() {
+    super();
+    this.autoDispose(
+      gristThemeObs().addListener((newTheme, oldTheme) => {
+        if (isEqual(newTheme, oldTheme)) { return; }
+
+        this._update();
+      })
+    );
+  }
+
+  protected _ready() {
+    this._update({fromReady: true});
+  }
+
+  private _update({fromReady}: {fromReady?: boolean} = {}) {
+    if (this.isDisposed()) { return; }
+
+    this._notify({
+      theme: gristThemeObs().get(),
+      fromReady,
     });
   }
 }
@@ -614,6 +802,9 @@ export class CustomSectionAPIImpl extends Disposable implements CustomSectionAPI
       this._section.columnsToMap(settings.columns);
     } else {
       this._section.columnsToMap(null);
+    }
+    if (settings.allowSelectBy !== undefined) {
+      this._section.allowSelectBy(settings.allowSelectBy);
     }
   }
 }

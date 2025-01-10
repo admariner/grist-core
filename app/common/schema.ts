@@ -4,7 +4,7 @@ import { GristObjCode } from "app/plugin/GristData";
 
 // tslint:disable:object-literal-key-quotes
 
-export const SCHEMA_VERSION = 39;
+export const SCHEMA_VERSION = 43;
 
 export const schema = {
 
@@ -23,6 +23,7 @@ export const schema = {
     summarySourceTable  : "Ref:_grist_Tables",
     onDemand            : "Bool",
     rawViewSectionRef   : "Ref:_grist_Views_section",
+    recordCardViewSectionRef: "Ref:_grist_Views_section",
   },
 
   "_grist_Tables_column": {
@@ -40,6 +41,7 @@ export const schema = {
     displayCol          : "Ref:_grist_Tables_column",
     visibleCol          : "Ref:_grist_Tables_column",
     rules               : "RefList:_grist_Tables_column",
+    reverseCol          : "Ref:_grist_Tables_column",
     recalcWhen          : "Int",
     recalcDeps          : "RefList:_grist_Tables_column",
   },
@@ -91,6 +93,7 @@ export const schema = {
     viewRef             : "Ref:_grist_Views",
     indentation         : "Int",
     pagePos             : "PositionNumber",
+    shareRef            : "Ref:_grist_Shares",
   },
 
   "_grist_Views": {
@@ -118,6 +121,7 @@ export const schema = {
     linkTargetColRef    : "Ref:_grist_Tables_column",
     embedId             : "Text",
     rules               : "RefList:_grist_Tables_column",
+    shareOptions        : "Text",
   },
 
   "_grist_Views_section_field": {
@@ -164,6 +168,8 @@ export const schema = {
     label               : "Text",
     memo                : "Text",
     enabled             : "Bool",
+    watchedColRefList   : "RefList:_grist_Tables_column",
+    options             : "Text",
   },
 
   "_grist_ACLRules": {
@@ -215,6 +221,13 @@ export const schema = {
     userRef             : "Text",
   },
 
+  "_grist_Shares": {
+    linkId              : "Text",
+    options             : "Text",
+    label               : "Text",
+    description         : "Text",
+  },
+
 };
 
 export interface SchemaTypes {
@@ -234,6 +247,7 @@ export interface SchemaTypes {
     summarySourceTable: number;
     onDemand: boolean;
     rawViewSectionRef: number;
+    recordCardViewSectionRef: number;
   };
 
   "_grist_Tables_column": {
@@ -251,6 +265,7 @@ export interface SchemaTypes {
     displayCol: number;
     visibleCol: number;
     rules: [GristObjCode.List, ...number[]]|null;
+    reverseCol: number;
     recalcWhen: number;
     recalcDeps: [GristObjCode.List, ...number[]]|null;
   };
@@ -302,6 +317,7 @@ export interface SchemaTypes {
     viewRef: number;
     indentation: number;
     pagePos: number;
+    shareRef: number;
   };
 
   "_grist_Views": {
@@ -329,6 +345,7 @@ export interface SchemaTypes {
     linkTargetColRef: number;
     embedId: string;
     rules: [GristObjCode.List, ...number[]]|null;
+    shareOptions: string;
   };
 
   "_grist_Views_section_field": {
@@ -375,6 +392,8 @@ export interface SchemaTypes {
     label: string;
     memo: string;
     enabled: boolean;
+    watchedColRefList: [GristObjCode.List, ...number[]]|null;
+    options: string;
   };
 
   "_grist_ACLRules": {
@@ -424,6 +443,13 @@ export interface SchemaTypes {
     type: number;
     content: string;
     userRef: string;
+  };
+
+  "_grist_Shares": {
+    linkId: string;
+    options: string;
+    label: string;
+    description: string;
   };
 
 }

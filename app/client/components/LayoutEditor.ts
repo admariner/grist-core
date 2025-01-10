@@ -501,7 +501,7 @@ export class LayoutEditor extends Disposable {
       handles: isWidth ? 'e' : 's',
       start: this.onResizeStart.bind(this, helperObj, isWidth),
       resize: this.onResizeMove.bind(this, helperObj, isWidth),
-      stop: this.triggerUserEditStop.bind(this)
+      stop: this.triggerUserEditStop.bind(this),
     });
   }
   public unmakeResizable(box: LayoutBox) {
@@ -838,8 +838,11 @@ function resizeLayoutBoxSmoothly(layoutBox: LayoutBox, startRect: string|DOMRect
     // usable and not cause errors elsewhere.
   })
   .finally(function() {
-    layoutBox.dom!.classList.remove('layout_editor_resize_transition');
-    layoutBox.dom!.style.flexGrow = prevFlexGrow;
+    if (!layoutBox.dom) {
+      return;
+    }
+    layoutBox.dom.classList.remove('layout_editor_resize_transition');
+    layoutBox.dom.style.flexGrow = prevFlexGrow;
   });
 }
 

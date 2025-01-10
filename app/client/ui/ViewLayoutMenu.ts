@@ -1,3 +1,4 @@
+import {hooks} from 'app/client/Hooks';
 import {makeT} from 'app/client/lib/localization';
 import {allCommands} from 'app/client/components/commands';
 import {ViewSectionRec} from 'app/client/models/DocModel';
@@ -6,6 +7,7 @@ import {testId} from 'app/client/ui2018/cssVars';
 import {menuDivider, menuItemCmd, menuItemLink} from 'app/client/ui2018/menus';
 import {GristDoc} from 'app/client/components/GristDoc';
 import {dom, UseCB} from 'grainjs';
+import {WidgetType} from 'app/common/widgetTypes';
 
 const t = makeT('ViewLayoutMenu');
 
@@ -57,28 +59,30 @@ export function makeViewLayoutMenu(viewSection: ViewSectionRec, isReadonly: bool
 
   const showRawData = (use: UseCB) => {
     return !use(viewSection.isRaw)// Don't show raw data if we're already in raw data.
+        && !use(viewSection.isRecordCard)
         && !isSinglePage // Don't show raw data in single page mode.
            ;
   };
 
+  const isCard = (use: UseCB) => use(viewSection.widgetType) === WidgetType.Card;
+  const isTable = (use: UseCB) => use(viewSection.widgetType) === WidgetType.Table;
+
   return [
-    dom.maybe((use) => ['single'].includes(use(viewSection.parentKey)), () => contextMenu),
+    dom.maybe(isCard, () => contextMenu),
     dom.maybe(showRawData,
       () => menuItemLink(
         { href: rawUrl}, t("Show raw data"), testId('show-raw-data'),
-        dom.on('click', (ev) => {
+        dom.on('click', () => {
           // Replace the current URL so that the back button works as expected (it navigates back from
           // the current page).
-          ev.stopImmediatePropagation();
-          ev.preventDefault();
           urlState().pushUrl(anchorUrlState, { replace: true }).catch(reportError);
         })
       )
     ),
     menuItemCmd(allCommands.printSection, t("Print widget"), testId('print-section')),
-    menuItemLink({ href: gristDoc.getCsvLink(), target: '_blank', download: ''},
+    menuItemLink(hooks.maybeModifyLinkAttrs({ href: gristDoc.getCsvLink(), target: '_blank', download: ''}),
       t("Download as CSV"), testId('download-section')),
-    menuItemLink({ href: gristDoc.getXlsxActiveViewLink(), target: '_blank', download: ''},
+    menuItemLink(hooks.maybeModifyLinkAttrs({ href: gristDoc.getXlsxActiveViewLink(), target: '_blank', download: ''}),
       t("Download as XLSX"), testId('download-section')),
     dom.maybe((use) => ['detail', 'single'].includes(use(viewSection.parentKey)), () =>
       menuItemCmd(allCommands.editLayout, t("Edit Card Layout"),
@@ -87,20 +91,23 @@ export function makeViewLayoutMenu(viewSection: ViewSectionRec, isReadonly: bool
     dom.maybe(!isSinglePage, () => [
       menuDivider(),
       menuItemCmd(allCommands.viewTabOpen, t("Widget options"), testId('widget-options')),
-      menuItemCmd(allCommands.sortFilterTabOpen, t("Advanced Sort & Filter")),
-      menuItemCmd(allCommands.dataSelectionTabOpen, t("Data selection")),
+      menuItemCmd(allCommands.sortFilterTabOpen, t("Advanced Sort & Filter"), dom.hide(viewSection.isRecordCard)),
+      menuItemCmd(allCommands.dataSelectionTabOpen, t("Data selection"), dom.hide(viewSection.isRecordCard)),
+      menuItemCmd(allCommands.createForm, t("Create a form"), dom.show(isTable)),
     ]),
 
-    menuDivider(),
+    menuDivider(dom.hide(viewSection.isRecordCard)),
     dom.maybe((use) => use(viewSection.parentKey) === 'custom' && use(viewSection.hasCustomOptions), () =>
       menuItemCmd(allCommands.openWidgetConfiguration, t("Open configuration"),
         testId('section-open-configuration')),
     ),
     menuItemCmd(allCommands.collapseSection, t("Collapse widget"),
       dom.cls('disabled', dontCollapseSection()),
+      dom.hide(viewSection.isRecordCard),
       testId('section-collapse')),
     menuItemCmd(allCommands.deleteSection, t("Delete widget"),
       dom.cls('disabled', dontRemoveSection()),
+      dom.hide(viewSection.isRecordCard),
       testId('section-delete')),
   ];
 }
@@ -111,25 +118,22 @@ export function makeViewLayoutMenu(viewSection: ViewSectionRec, isReadonly: bool
  */
 export function makeCollapsedLayoutMenu(viewSection: ViewSectionRec, gristDoc: GristDoc) {
   const isReadonly = gristDoc.isReadonly.get();
-  const isSinglePage = urlState().state.get().params?.style === 'singlePage';
   const sectionId = viewSection.table.peek().rawViewSectionRef.peek();
   const anchorUrlState = { hash: { sectionId, popup: true } };
   const rawUrl = urlState().makeUrl(anchorUrlState);
   return [
-    dom.maybe((use) => !use(viewSection.isRaw) && !isSinglePage && !use(gristDoc.maximizedSectionId),
+    dom.maybe((use) => !use(viewSection.isRaw) && use(gristDoc.canShowRawData),
       () => menuItemLink(
         { href: rawUrl}, t("Show raw data"), testId('show-raw-data'),
-        dom.on('click', (ev) => {
+        dom.on('click', () => {
           // Replace the current URL so that the back button works as expected (it navigates back from
           // the current page).
-          ev.stopImmediatePropagation();
-          ev.preventDefault();
           urlState().pushUrl(anchorUrlState, { replace: true }).catch(reportError);
         })
       )
     ),
     menuDivider(),
-    menuItemCmd(allCommands.expandSection, t("Add to page"),
+    menuItemCmd(allCommands.restoreSection, t("Add to page"),
       dom.cls('disabled', isReadonly),
       testId('section-expand')),
     menuItemCmd(allCommands.deleteCollapsedSection, t("Delete widget"),

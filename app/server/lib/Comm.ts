@@ -35,14 +35,13 @@
 import {EventEmitter} from 'events';
 import * as http from 'http';
 import * as https from 'https';
-import * as WebSocket from 'ws';
+import {GristSocketServer} from 'app/server/lib/GristSocketServer';
+import {GristServerSocket} from 'app/server/lib/GristServerSocket';
 
-import {CommDocEventType, CommMessage} from 'app/common/CommTypes';
 import {parseFirstUrlPart} from 'app/common/gristUrls';
 import {firstDefined, safeJsonParse} from 'app/common/gutil';
 import {UserProfile} from 'app/common/LoginSessionAPI';
 import * as version from 'app/common/version';
-import {getRequestProfile} from 'app/server/lib/Authorizer';
 import {ScopedSession} from "app/server/lib/BrowserSession";
 import {Client, ClientMethod} from "app/server/lib/Client";
 import {Hosts, RequestWithOrg} from 'app/server/lib/extractOrg';
@@ -52,6 +51,7 @@ import {localeFromRequest} from 'app/server/lib/ServerLocale';
 import {fromCallback} from 'app/server/lib/serverUtils';
 import {Sessions} from 'app/server/lib/Sessions';
 import {i18n} from 'i18next';
+import { trustOrigin } from './requestUtils';
 
 export interface CommOptions {
   sessions: Sessions;                   // A collection of all sessions for this instance of Grist
@@ -76,7 +76,7 @@ export interface CommOptions {
 export class Comm extends EventEmitter {
   // Collection of all sessions; maps sessionIds to ScopedSession objects.
   public readonly sessions: Sessions = this._options.sessions;
-  private _wss: WebSocket.Server[]|null = null;
+  private _wss: GristSocketServer[]|null = null;
 
   private _clients = new Map<string, Client>();   // Maps clientIds to Client objects.
 
@@ -148,11 +148,6 @@ export class Comm extends EventEmitter {
   public async testServerShutdown() {
     if (this._wss) {
       for (const wssi of this._wss) {
-        // Terminate all clients. WebSocket.Server used to do it automatically in close() but no
-        // longer does (see https://github.com/websockets/ws/pull/1904#discussion_r668844565).
-        for (const ws of wssi.clients) {
-          ws.terminate();
-        }
         await fromCallback((cb) => wssi.close(cb));
       }
       this._wss = null;
@@ -198,8 +193,7 @@ export class Comm extends EventEmitter {
    */
   private async _getSessionProfile(scopedSession: ScopedSession, req: http.IncomingMessage): Promise<UserProfile|null> {
     return await firstDefined(
-      async () => this._options.loginMiddleware?.getProfile?.(req),
-      async () => getRequestProfile(req),
+      async () => this._options.loginMiddleware?.overrideProfile?.(req),
       async () => scopedSession.getSessionProfile(),
     ) || null;
   }
@@ -207,14 +201,7 @@ export class Comm extends EventEmitter {
   /**
    * Processes a new websocket connection, and associates the websocket and a Client object.
    */
-  private async _onWebSocketConnection(websocket: WebSocket, req: http.IncomingMessage) {
-    if (this._options.hosts) {
-      // DocWorker ID (/dw/) and version tag (/v/) may be present in this request but are not
-      // needed. addOrgInfo assumes req.url starts with /o/ if present.
-      req.url = parseFirstUrlPart('dw', req.url!).path;
-      req.url = parseFirstUrlPart('v', req.url).path;
-      await this._options.hosts.addOrgInfo(req);
-    }
+  private async _onWebSocketConnection(websocket: GristServerSocket, req: http.IncomingMessage) {
 
     // Parse the cookie in the request to get the sessionId.
     const sessionId = this.sessions.getSessionIdFromRequest(req);
@@ -245,7 +232,7 @@ export class Comm extends EventEmitter {
     client.setSession(scopedSession);                 // Add a Session object to the client.
     client.setOrg((req as RequestWithOrg).org || "");
     client.setProfile(profile);
-    client.setConnection(websocket, counter, browserSettings);
+    client.setConnection({websocket, req, counter, browserSettings});
 
     await client.sendConnectMessage(newClient, reuseClient, lastSeqId, {
       serverVersion: this._serverVersion || version.gitcommit,
@@ -258,33 +245,37 @@ export class Comm extends EventEmitter {
     if (this._options.httpsServer) { servers.push(this._options.httpsServer); }
     const wss = [];
     for (const server of servers) {
-      const wssi = new WebSocket.Server({server});
-      wssi.on('connection', async (websocket: WebSocket, req) => {
+      const wssi = new GristSocketServer(server, {
+        verifyClient: async (req: http.IncomingMessage) => {
+          try {
+            if (this._options.hosts) {
+              // DocWorker ID (/dw/) and version tag (/v/) may be present in this request but are not
+              // needed. addOrgInfo assumes req.url starts with /o/ if present.
+              req.url = parseFirstUrlPart('dw', req.url!).path;
+              req.url = parseFirstUrlPart('v', req.url).path;
+              await this._options.hosts.addOrgInfo(req);
+            }
+
+            return trustOrigin(req);
+          } catch (err) {
+            // Consider exceptions (e.g. in parsing unexpected hostname) as failures to verify.
+            // In practice, we only see this happening for spammy/illegitimate traffic; there is
+            // no particular reason to log these.
+            return false;
+          }
+        }
+      });
+
+      wssi.onconnection = async (websocket: GristServerSocket, req) => {
         try {
           await this._onWebSocketConnection(websocket, req);
         } catch (e) {
           log.error("Comm connection for %s threw exception: %s", req.url, e.message);
           websocket.terminate();  // close() is inadequate when ws routed via loadbalancer
         }
-      });
+      };
       wss.push(wssi);
     }
     return wss;
   }
-}
-
-/**
- * Sends a per-doc message to the given client.
- * @param {Object} client - The client object, as passed to all per-doc methods.
- * @param {Number} docFD - The document's file descriptor in the given client.
- * @param {String} type - The type of the message, e.g. 'docUserAction'.
- * @param {Object} messageData - The data for this type of message.
- * @param {Boolean} fromSelf - Whether `client` is the originator of this message.
- */
-export function sendDocMessage(
-  client: Client, docFD: number, type: CommDocEventType, data: unknown, fromSelf?: boolean
-) {
-  // TODO Warning disabled to preserve past behavior, but perhaps better to return the Promise?
-  // eslint-disable-next-line @typescript-eslint/no-floating-promises
-  client.sendMessage({type, docFD, data, fromSelf} as CommMessage);
 }

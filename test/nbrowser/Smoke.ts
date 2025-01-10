@@ -6,7 +6,7 @@
  *
  */
 
-import { assert, driver } from 'mocha-webdriver';
+import { assert, driver, Key} from 'mocha-webdriver';
 import { server, setupTestSuite } from 'test/nbrowser/testUtils';
 import * as gu from 'test/nbrowser/gristUtils';
 
@@ -14,7 +14,7 @@ async function openMainPage() {
   await driver.get(`${server.getHost()}`);
   while (true) {    // eslint-disable-line no-constant-condition
     try {
-      if (await driver.findContent('button', /Create Empty Document/).isPresent()) {
+      if (await driver.find('.test-intro-create-doc').isPresent()) {
         return;
       }
     } catch (e) {
@@ -31,13 +31,16 @@ describe("Smoke", function() {
   it('can create, edit, and reopen a document', async function() {
     this.timeout(20000);
     await openMainPage();
-    await driver.findContent('button', /Create Empty Document/).click();
+    await driver.find('.test-intro-create-doc').click();
     await gu.waitForDocToLoad(20000);
     await gu.dismissWelcomeTourIfNeeded();
     await gu.getCell('A', 1).click();
+
+    // Shouldn't be necessary, but an attempt to reduce flakiness that has shown up about opening the cell for editing.
+    await gu.sendKeys(Key.ENTER);
+
     await gu.enterCell('123');
-    await driver.navigate().refresh();
-    await gu.waitForDocToLoad();
+    await gu.refreshDismiss();
     assert.equal(await gu.getCell('A', 1).getText(), '123');
   });
 });

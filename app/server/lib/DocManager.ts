@@ -8,29 +8,29 @@ import * as path from 'path';
 import {ApiError} from 'app/common/ApiError';
 import {mapSetOrClear, MapWithTTL} from 'app/common/AsyncCreate';
 import {BrowserSettings} from 'app/common/BrowserSettings';
-import {DocCreationInfo, DocEntry, DocListAPI, OpenDocMode, OpenLocalDocResult} from 'app/common/DocListAPI';
+import {DocCreationInfo, DocEntry, DocListAPI, OpenDocOptions, OpenLocalDocResult} from 'app/common/DocListAPI';
 import {FilteredDocUsageSummary} from 'app/common/DocUsage';
-import {Invite} from 'app/common/sharing';
+import {parseUrlId} from 'app/common/gristUrls';
 import {tbind} from 'app/common/tbind';
+import {TelemetryMetadataByLevel} from 'app/common/Telemetry';
 import {NEW_DOCUMENT_CODE} from 'app/common/UserAPI';
-import {HomeDBManager} from 'app/gen-server/lib/HomeDBManager';
-import {assertAccess, Authorizer, DocAuthorizer, DummyAuthorizer, isSingleUserMode} from 'app/server/lib/Authorizer';
+import {HomeDBManager} from 'app/gen-server/lib/homedb/HomeDBManager';
+import {assertAccess, Authorizer, DocAuthorizer, DummyAuthorizer, isSingleUserMode,
+        RequestWithLogin} from 'app/server/lib/Authorizer';
+import {IAttachmentStoreProvider} from 'app/server/lib/AttachmentStoreProvider';
 import {Client} from 'app/server/lib/Client';
-import {
-  getDocSessionCachedDoc,
-  makeExceptionalDocSession,
-  makeOptDocSession,
-  OptDocSession
-} from 'app/server/lib/DocSession';
+import {makeExceptionalDocSession, makeOptDocSession, OptDocSession} from 'app/server/lib/DocSession';
 import * as docUtils from 'app/server/lib/docUtils';
 import {GristServer} from 'app/server/lib/GristServer';
 import {IDocStorageManager} from 'app/server/lib/IDocStorageManager';
 import {makeForkIds, makeId} from 'app/server/lib/idUtils';
 import {checkAllegedGristDoc} from 'app/server/lib/serverUtils';
+import {getDocSessionCachedDoc} from 'app/server/lib/sessionUtils';
 import log from 'app/server/lib/log';
 import {ActiveDoc} from './ActiveDoc';
 import {PluginManager} from './PluginManager';
 import {getFileUploadInfo, globalUploadSet, makeAccessId, UploadInfo} from './uploads';
+import merge = require('lodash/merge');
 import noop = require('lodash/noop');
 
 // A TTL in milliseconds to use for material that can easily be recomputed / refetched
@@ -39,7 +39,10 @@ export const DEFAULT_CACHE_TTL = 10000;
 
 // How long to remember that a document has been explicitly set in a
 // recovery mode.
-export const RECOVERY_CACHE_TTL = 30000;
+export const RECOVERY_CACHE_TTL = 30000; // 30 seconds
+
+// How long to remember the timing mode of a document.
+export const TIMING_ON_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
 /**
  * DocManager keeps track of "active" Grist documents, i.e. those loaded
@@ -52,17 +55,28 @@ export class DocManager extends EventEmitter {
   // Remember recovery mode of documents.
   private _inRecovery = new MapWithTTL<string, boolean>(RECOVERY_CACHE_TTL);
 
+  // Remember timing mode of documents, when document is recreated it is put in the same mode.
+  private _inTimingOn = new MapWithTTL<string, boolean>(TIMING_ON_CACHE_TTL);
+
   constructor(
     public readonly storageManager: IDocStorageManager,
     public readonly pluginManager: PluginManager|null,
     private _homeDbManager: HomeDBManager|null,
-    public gristServer: GristServer
+    private _attachmentStoreProvider: IAttachmentStoreProvider,
+    public gristServer: GristServer,
   ) {
     super();
   }
 
   public setRecovery(docId: string, recovery: boolean) {
     this._inRecovery.set(docId, recovery);
+  }
+
+  /**
+   * Will restore timing on a document when it is reloaded.
+   */
+  public restoreTimingOn(docId: string, timingOn: boolean) {
+    this._inTimingOn.set(docId, timingOn);
   }
 
   // attach a home database to the DocManager.  During some tests, it
@@ -117,13 +131,6 @@ export class DocManager extends EventEmitter {
   }
 
   /**
-   * Returns a promise for invites to docs which have not been downloaded.
-   */
-  public async getLocalInvites(client: Client): Promise<Invite[]> {
-    return [];
-  }
-
-  /**
    * Creates a new document, fetches it, and adds a table to it.
    * @returns {Promise:String} The name of the new document.
    */
@@ -131,6 +138,14 @@ export class DocManager extends EventEmitter {
     log.debug('DocManager.createNewDoc');
     const docSession = makeExceptionalDocSession('nascent', {client});
     return this.createNamedDoc(docSession, 'Untitled');
+  }
+
+  /**
+   * Add an ActiveDoc created externally. This is a hook used by
+   * grist-static.
+   */
+  public addActiveDoc(docId: string, activeDoc: ActiveDoc) {
+    this._activeDocs.set(docId, Promise.resolve(activeDoc));
   }
 
   public async createNamedDoc(docSession: OptDocSession, docId: string): Promise<string> {
@@ -178,34 +193,57 @@ export class DocManager extends EventEmitter {
                              {naming: 'saved'});
   }
 
-  // Do an import targeted at a specific workspace. Cleans up uploadId.
-  // UserId should correspond to the user making the request.
-  // A workspaceId of null results in an import to an unsaved doc, not
-  // associated with a specific workspace.
-  public async importDocToWorkspace(
-    userId: number, uploadId: number, workspaceId: number|null, browserSettings?: BrowserSettings,
-  ): Promise<DocCreationInfo> {
+  /**
+   * Do an import targeted at a specific workspace.
+   *
+   * `userId` should correspond to the user making the request.
+   *
+   * If workspaceId is omitted, an unsaved doc unassociated with a specific workspace
+   * will be created.
+   *
+   * Cleans up `uploadId` and returns creation info about the imported doc.
+   */
+  public async importDocToWorkspace(mreq: RequestWithLogin, options: {
+    userId: number,
+    uploadId: number,
+    documentName?: string,
+    workspaceId?: number,
+    browserSettings?: BrowserSettings,
+    telemetryMetadata?: TelemetryMetadataByLevel,
+  }): Promise<DocCreationInfo> {
     if (!this._homeDbManager) { throw new Error("HomeDbManager not available"); }
 
+    const {userId, uploadId, documentName, workspaceId, browserSettings, telemetryMetadata} = options;
     const accessId = this.makeAccessId(userId);
     const docSession = makeExceptionalDocSession('nascent', {browserSettings});
-    const register = async (docId: string, docTitle: string) => {
-      if (!workspaceId || !this._homeDbManager) { return; }
-      const queryResult = await this._homeDbManager.addDocument({userId}, workspaceId,
-                                                                {name: docTitle}, docId);
+    const register = async (docId: string, uploadBaseFilename: string) => {
+      if (workspaceId === undefined || !this._homeDbManager) { return; }
+      const queryResult = await this._homeDbManager.addDocument(
+        {userId},
+        workspaceId,
+        {name: documentName ?? uploadBaseFilename},
+        docId
+      );
       if (queryResult.status !== 200) {
         // TODO The ready-to-add document is not yet in storageManager, but is in the filesystem. It
         // should get cleaned up in case of error here.
         throw new ApiError(queryResult.errMessage || 'unable to add imported document', queryResult.status);
       }
     };
-    return this._doImportDoc(docSession,
-                             globalUploadSet.getUploadInfo(uploadId, accessId), {
-                               naming: workspaceId ? 'saved' : 'unsaved',
-                               register,
-                               userId,
-                             });
-
+    const uploadInfo = globalUploadSet.getUploadInfo(uploadId, accessId);
+    const docCreationInfo = await this._doImportDoc(docSession, uploadInfo, {
+      naming: workspaceId ? 'saved' : 'unsaved',
+      register,
+      userId,
+    });
+    this.gristServer.getTelemetry().logEvent(mreq, 'documentCreated', merge({
+      limited: {
+        docIdDigest: docCreationInfo.id,
+        fileType: uploadInfo.files[0].ext.trim().slice(1),
+        isSaved: workspaceId !== undefined,
+      },
+    }, telemetryMetadata));
+    return docCreationInfo;
     // The imported document is associated with the worker that did the import.
     // We could break that association (see /api/docs/:docId/assign for how) if
     // we start using dedicated import workers.
@@ -262,21 +300,32 @@ export class DocManager extends EventEmitter {
    *      `doc` - the object with metadata tables.
    */
   public async openDoc(client: Client, docId: string,
-                       openMode: OpenDocMode = 'default',
-                       linkParameters: Record<string, string> = {}): Promise<OpenLocalDocResult> {
+                       options?: OpenDocOptions): Promise<OpenLocalDocResult> {
+    if (typeof options === 'string') {
+      throw new Error('openDoc call with outdated parameter type');
+    }
+    const openMode = options?.openMode || 'default';
+    const linkParameters = options?.linkParameters || {};
+    const originalUrlId = options?.originalUrlId;
     let auth: Authorizer;
+    let userId: number | undefined;
     const dbManager = this._homeDbManager;
     if (!isSingleUserMode()) {
       if (!dbManager) { throw new Error("HomeDbManager not available"); }
       // Sets up authorization of the document.
       const org = client.getOrg();
       if (!org) { throw new Error('Documents can only be opened in the context of a specific organization'); }
-      const userId = await client.getUserId(dbManager) || dbManager.getAnonymousUserId();
+      userId = await client.getUserId(dbManager) || dbManager.getAnonymousUserId();
       const userRef = await client.getUserRef(dbManager);
 
       // We use docId in the key, and disallow urlId, so we can be sure that we are looking at the
       // right doc when we re-query the DB over the life of the websocket.
-      const key = {urlId: docId, userId, org};
+      const useShareUrlId = Boolean(originalUrlId && parseUrlId(originalUrlId).shareKey);
+      const key = {
+        urlId: useShareUrlId ? originalUrlId! : docId,
+        userId,
+        org
+      };
       log.debug("DocManager.openDoc Authorizer key", key);
       const docAuth = await dbManager.getDocAuthCached(key);
       assertAccess('viewers', docAuth);
@@ -334,9 +383,10 @@ export class DocManager extends EventEmitter {
         }
       }
 
-      const [metaTables, recentActions, userOverride] = await Promise.all([
+      const [metaTables, recentActions, user, userOverride] = await Promise.all([
         activeDoc.fetchMetaTables(docSession),
         activeDoc.getRecentMinimalActions(docSession),
+        activeDoc.getUser(docSession),
         activeDoc.getUserOverride(docSession),
       ]);
 
@@ -353,13 +403,23 @@ export class DocManager extends EventEmitter {
         doc: metaTables,
         log: recentActions,
         recoveryMode: activeDoc.recoveryMode,
+        user: user.toUserInfo(),
         userOverride,
         docUsage,
+        isTimingOn: activeDoc.isTimingOn,
       };
 
       if (!activeDoc.muted) {
         this.emit('open-doc', this.storageManager.getPath(activeDoc.docName));
       }
+
+      this.gristServer.getTelemetry().logEvent(docSession, 'openedDoc', {
+        full: {
+          docIdDigest: docId,
+          userId,
+          altSessionId: client.getAltSessionId(),
+        },
+      });
 
       return {activeDoc, result};
     });
@@ -380,6 +440,10 @@ export class DocManager extends EventEmitter {
     } catch (err) {
       log.error('DocManager had problem shutting down storage: %s', err.message);
     }
+
+    // Clear any timeouts we might have.
+    this._inRecovery.clear();
+    this._inTimingOn.clear();
 
     // Clear the setInterval that the pidusage module sets up internally.
     pidusage.clear();
@@ -545,7 +609,10 @@ export class DocManager extends EventEmitter {
     const doc = await this._getDoc(docSession, docName);
     // Get URL for document for use with SELF_HYPERLINK().
     const docUrls = doc && await this._getDocUrls(doc);
-    return new ActiveDoc(this, docName, {...docUrls, safeMode, doc});
+    const activeDoc = new ActiveDoc(this, docName, this._attachmentStoreProvider, {...docUrls, safeMode, doc});
+    // Restore the timing mode of the document.
+    activeDoc.isTimingOn = this._inTimingOn.get(docName) || false;
+    return activeDoc;
   }
 
   /**
@@ -555,7 +622,7 @@ export class DocManager extends EventEmitter {
   private async _doImportDoc(docSession: OptDocSession, uploadInfo: UploadInfo,
                              options: {
                                naming: 'classic'|'saved'|'unsaved',
-                               register?: (docId: string, docTitle: string) => Promise<void>,
+                               register?: (docId: string, uploadBaseFilename: string) => Promise<void>,
                                userId?: number,
                              }): Promise<DocCreationInfo> {
     try {
@@ -565,6 +632,7 @@ export class DocManager extends EventEmitter {
         throw new Error('Grist docs must be uploaded individually');
       }
       const first = uploadInfo.files[0].origName;
+      log.debug(`DocManager._doImportDoc: Received doc with name ${first}`);
       const ext = extname(first);
       const basename = path.basename(first, ext).trim() || "Untitled upload";
       let id: string;
@@ -589,6 +657,7 @@ export class DocManager extends EventEmitter {
       }
       await options.register?.(id, basename);
       if (ext === '.grist') {
+        log.debug(`DocManager._doImportDoc: Importing .grist doc`);
         // If the import is a grist file, copy it to the docs directory.
         // TODO: We should be skeptical of the upload file to close a possible
         // security vulnerability. See https://phab.getgrist.com/T457.

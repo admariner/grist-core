@@ -1,7 +1,8 @@
 import {createGroup} from 'app/client/components/commands';
-import {duplicatePage} from 'app/client/components/duplicatePage';
+import {buildDuplicatePageDialog} from 'app/client/components/duplicatePage';
 import {GristDoc} from 'app/client/components/GristDoc';
 import {makeT} from 'app/client/lib/localization';
+import {logTelemetryEvent} from 'app/client/lib/telemetry';
 import {PageRec} from 'app/client/models/DocModel';
 import {urlState} from 'app/client/models/gristUrlState';
 import MetaTableModel from 'app/client/models/MetaTableModel';
@@ -9,6 +10,7 @@ import {find as findInTree, fromTableData, TreeItemRecord, TreeRecord,
         TreeTableData} from 'app/client/models/TreeModel';
 import {TreeViewComponent} from 'app/client/ui/TreeViewComponent';
 import {cssRadioCheckboxOptions, radioCheckboxOption} from 'app/client/ui2018/checkbox';
+import {theme} from 'app/client/ui2018/cssVars';
 import {cssLink} from 'app/client/ui2018/links';
 import {ISaveModalOptions, saveModal} from 'app/client/ui2018/modals';
 import {buildCensoredPage, buildPageDom, PageActions} from 'app/client/ui2018/pages';
@@ -71,8 +73,7 @@ function buildDomFromTable(pagesTable: MetaTableModel<PageRec>, activeDoc: Grist
   const actions: PageActions = {
     onRename: (newName: string) => newName.length && pageName.saveOnly(newName),
     onRemove: () => removeView(activeDoc, viewId, pageName.peek()),
-    // TODO: duplicate should prompt user for confirmation
-    onDuplicate: () => duplicatePage(activeDoc, pageId),
+    onDuplicate: () => buildDuplicatePageDialog(activeDoc, pageId),
     // Can't remove last visible page
     isRemoveDisabled: () => activeDoc.docModel.visibleDocPages.peek().length <= 1,
     isReadonly
@@ -82,10 +83,12 @@ function buildDomFromTable(pagesTable: MetaTableModel<PageRec>, activeDoc: Grist
 }
 
 function removeView(activeDoc: GristDoc, viewId: number, pageName: string) {
+  logTelemetryEvent('deletedPage', {full: {docIdDigest: activeDoc.docId()}});
+
   const docData = activeDoc.docData;
   // Create a set with tables on other pages (but not on this one).
   const tablesOnOtherViews = new Set(activeDoc.docModel.viewSections.rowModels
-    .filter(vs => !vs.isRaw.peek() && vs.parentId.peek() !== viewId)
+    .filter(vs => !vs.isRaw.peek() && !vs.isRecordCard.peek() && vs.parentId.peek() !== viewId)
     .map(vs => vs.tableRef.peek()));
 
   // Check if this page is a last page for some tables.
@@ -175,8 +178,8 @@ const cssWarning = styled('div', `
 `);
 
 const cssTableName = styled('div', `
-  color: black;
-  background-color: #eee;
+  color: ${theme.choiceTokenFg};
+  background-color: ${theme.choiceTokenBg};
   padding: 3px 6px;
   border-radius: 4px;
 `);

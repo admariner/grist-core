@@ -6,10 +6,12 @@ import {aclFormulaEditor} from 'app/client/aclui/ACLFormulaEditor';
 import {aclMemoEditor} from 'app/client/aclui/ACLMemoEditor';
 import {aclSelect} from 'app/client/aclui/ACLSelect';
 import {ACLUsersPopup} from 'app/client/aclui/ACLUsers';
-import {PermissionKey, permissionsWidget} from 'app/client/aclui/PermissionsWidget';
+import {permissionsWidget} from 'app/client/aclui/PermissionsWidget';
 import {GristDoc} from 'app/client/components/GristDoc';
+import {logTelemetryEvent} from 'app/client/lib/telemetry';
 import {reportError, UserError} from 'app/client/models/errors';
 import {TableData} from 'app/client/models/TableData';
+import {withInfoTooltip} from 'app/client/ui/tooltips';
 import {shadowScroll} from 'app/client/ui/shadowScroll';
 import {bigBasicButton, bigPrimaryButton} from 'app/client/ui2018/buttons';
 import {squareCheckbox} from 'app/client/ui2018/checkbox';
@@ -18,26 +20,29 @@ import {textInput} from 'app/client/ui2018/editableLabel';
 import {cssIconButton, icon} from 'app/client/ui2018/icons';
 import {menu, menuItemAsync} from 'app/client/ui2018/menus';
 import {
+  AVAILABLE_BITS_COLUMNS,
+  AVAILABLE_BITS_TABLES,
   emptyPermissionSet,
   MixedPermissionValue,
   parsePermissions,
   PartialPermissionSet,
+  PermissionKey,
   permissionSetToText,
   summarizePermissions,
-  summarizePermissionSet
+  summarizePermissionSet,
+  trimPermissions
 } from 'app/common/ACLPermissions';
 import {ACLRuleCollection, isSchemaEditResource, SPECIAL_RULES_TABLE_ID} from 'app/common/ACLRuleCollection';
 import {AclRuleProblem, AclTableDescription, getTableTitle} from 'app/common/ActiveDocAPI';
 import {BulkColValues, getColValues, RowRecord, UserAction} from 'app/common/DocActions';
 import {
-  FormulaProperties,
-  getFormulaProperties,
   RulePart,
   RuleSet,
   UserAttributeRule
 } from 'app/common/GranularAccessClause';
 import {isHiddenCol} from 'app/common/gristTypes';
 import {isNonNullish, unwrap} from 'app/common/gutil';
+import {getPredicateFormulaProperties, PredicateFormulaProperties} from 'app/common/PredicateFormula';
 import {SchemaTypes} from 'app/common/schema';
 import {MetaRowRecord} from 'app/common/TableData';
 import {
@@ -308,6 +313,13 @@ export class AccessRules extends Disposable {
       });
     }
 
+    logTelemetryEvent('changedAccessRules', {
+      full: {
+        docIdDigest: this.gristDoc.docId(),
+        ruleCount: newRules.length,
+      },
+    });
+
     // We need to fill in rulePos values. We'll add them in the order the rules are listed (since
     // this.getRules() returns them in a suitable order), keeping rulePos unchanged when possible.
     let lastGoodRulePos = 0;
@@ -346,7 +358,7 @@ export class AccessRules extends Disposable {
 
   public buildDom() {
     return cssOuter(
-      dom('div', this.gristDoc.behavioralPromptsManager.attachTip('accessRules', {
+      dom('div', this.gristDoc.behavioralPromptsManager.attachPopup('accessRules', {
         hideArrow: true,
       })),
       cssAddTableRow(
@@ -483,7 +495,7 @@ export class AccessRules extends Disposable {
     removeItem(this._userAttrRules, userAttr);
   }
 
-  public async checkAclFormula(text: string): Promise<FormulaProperties> {
+  public async checkAclFormula(text: string): Promise<PredicateFormulaProperties> {
     if (text) {
       return this.gristDoc.docComm.checkAclFormula(text);
     }
@@ -682,8 +694,7 @@ class TableRules extends Disposable {
         cssIconButton(icon('Dots'), {style: 'margin-left: auto'},
           menu(() => [
             menuItemAsync(() => this._addColumnRuleSet(), t("Add Column Rule")),
-            menuItemAsync(() => this._addDefaultRuleSet(), t("Add Default Rule"),
-              dom.cls('disabled', use => Boolean(use(this._defaultRuleSet)))),
+            menuItemAsync(() => this._addDefaultRuleSet(), t("Add Table-wide Rule")),
             menuItemAsync(() => this._accessRules.removeTableRules(this), t("Delete Table Rules")),
           ]),
           testId('rule-table-menu-btn'),
@@ -805,9 +816,13 @@ class TableRules extends Disposable {
   }
 
   private _addDefaultRuleSet() {
-    if (!this._defaultRuleSet.get()) {
+    const ruleSet = this._defaultRuleSet.get();
+    if (!ruleSet) {
       DefaultObsRuleSet.create(this._defaultRuleSet, this._accessRules, this, this._haveColumnRules);
       this.addDefaultRules(this._accessRules.getSeedRules());
+    } else {
+      const part = ruleSet.addRulePart(ruleSet.getDefaultCondition());
+      setTimeout(() => part.focusEditor?.(), 0);
     }
   }
 }
@@ -978,12 +993,19 @@ abstract class ObsRuleSet extends Disposable {
         // Should not happen.
         continue;
       }
+
+      // Include only the permissions for the bits that this RuleSet supports. E.g. this matters
+      // for seed rules, which may include create/delete bits which shouldn't apply to columns.
+      const origPermissions = parsePermissions(permissionsText);
+      const trimmedPermissions = trimPermissions(origPermissions, this.getAvailableBits());
+      const trimmedPermissionsText = permissionSetToText(trimmedPermissions);
+
       this.addRulePart(
         this.getFirst() || null,
         {
           aclFormula,
-          permissionsText,
-          permissions: parsePermissions(permissionsText),
+          permissionsText: trimmedPermissionsText,
+          permissions: trimmedPermissions,
           memo,
         },
         true,
@@ -1026,11 +1048,17 @@ abstract class ObsRuleSet extends Disposable {
     return body.length > 0 && body[body.length - 1].hasEmptyCondition(use);
   }
 
+  public getDefaultCondition(): ObsRulePart|null {
+    const body = this._body.get();
+    const last = body.length > 0 ? body[body.length - 1] : null;
+    return last?.hasEmptyCondition(unwrap) ? last : null;
+  }
+
   /**
    * Which permission bits to allow the user to set.
    */
   public getAvailableBits(): PermissionKey[] {
-    return ['read', 'update', 'create', 'delete'];
+    return AVAILABLE_BITS_TABLES;
   }
 
   /**
@@ -1055,6 +1083,16 @@ abstract class ObsRuleSet extends Disposable {
   // Get rule parts that are neither built-in nor empty.
   public getCustomRules(): ObsRulePart[] {
     return this._body.get().filter(rule => !rule.isBuiltInOrEmpty());
+  }
+
+  /**
+   * If the set applies to a special column, return its name.
+   */
+  public getSpecialColumn(): string|undefined {
+    if (this._ruleSet?.tableId === SPECIAL_RULES_TABLE_ID &&
+        this._ruleSet.colIds.length === 1) {
+      return this._ruleSet.colIds[0];
+    }
   }
 }
 
@@ -1099,8 +1137,7 @@ class ColumnObsRuleSet extends ObsRuleSet {
   }
 
   public getAvailableBits(): PermissionKey[] {
-    // Create/Delete bits can't be set on a column-specific rule.
-    return ['read', 'update'];
+    return AVAILABLE_BITS_COLUMNS;
   }
 
   public hasColumns() {
@@ -1121,8 +1158,9 @@ class DefaultObsRuleSet extends ObsRuleSet {
     return [
       cssCenterContent.cls(''),
       cssDefaultLabel(
-        dom.text(use => this._haveColumnRules && use(this._haveColumnRules) ? 'All Other' : 'All'),
-      )
+        dom.domComputed(use => this._haveColumnRules && use(this._haveColumnRules), (haveColRules) =>
+          haveColRules ? withInfoTooltip('All', 'accessRulesTableWide') : 'All')
+      ),
     ];
   }
 }
@@ -1322,7 +1360,7 @@ class SpecialSchemaObsRuleSet extends SpecialObsRuleSet {
   protected _buildDomWarning(): DomContents {
     return dom.maybe(
       (use) => use(this._body).every(rule => rule.isBuiltInOrEmpty(use)),
-      () => cssConditionError({style: 'margin-left: 56px; margin-bottom: 8px;'},
+      () => cssError(
         t("This default should be changed if editors' access is to be limited. "),
         dom('a', {style: 'color: inherit; text-decoration: underline'},
           'Dismiss', dom.on('click', () => this._allowEditors('confirm'))),
@@ -1436,7 +1474,6 @@ class ObsUserAttributeRule extends Disposable {
         cssColumnGroup(
           cssCell1(
             aclFormulaEditor({
-              gristTheme: this._accessRules.gristDoc.currentTheme,
               initialValue: this._charId.get(),
               readOnly: false,
               setValue: (text) => this._setUserAttr(text),
@@ -1536,6 +1573,8 @@ class ObsRulePart extends Disposable {
   // Whether the rule part, and if it's valid or being checked.
   public ruleStatus: Computed<RuleStatus>;
 
+  public focusEditor: (() => void)|undefined;
+
   // Formula to show in the formula editor.
   private _aclFormula = Observable.create<string>(this, this._rulePart?.aclFormula || "");
 
@@ -1567,7 +1606,8 @@ class ObsRulePart extends Disposable {
   // If the formula failed validation, the error message to show. Blank if valid.
   private _formulaError = Observable.create(this, '');
 
-  private _formulaProperties = Observable.create<FormulaProperties>(this, getAclFormulaProperties(this._rulePart));
+  private _formulaProperties = Observable.create<PredicateFormulaProperties>(this,
+    getAclFormulaProperties(this._rulePart));
 
   // Error message if any validation failed.
   private _error: Computed<string>;
@@ -1587,7 +1627,7 @@ class ObsRulePart extends Disposable {
 
     this._error = Computed.create(this, (use) => {
       return use(this._formulaError) ||
-        this._warnInvalidColIds(use(this._formulaProperties).usedColIds) ||
+        this._warnInvalidColIds(use(this._formulaProperties).recColIds) ||
         ( !this._ruleSet.isLastCondition(use, this) &&
           use(this._aclFormula) === '' &&
           permissionSetToText(use(this._permissions)) !== '' ?
@@ -1605,6 +1645,14 @@ class ObsRulePart extends Disposable {
         !isEqual(use(this._permissions), this._rulePart?.permissions ?? emptyPerms)
       );
     });
+    // The formula may be invalid from the beginning. Make sure we show errors in this
+    // case.
+    const text = this._aclFormula.get();
+    if (text) {
+      this._setAclFormula(text, true).catch(e => {
+        console.error(e);
+      });
+    }
   }
 
   public getRulePart(): RuleRec {
@@ -1659,7 +1707,6 @@ class ObsRulePart extends Disposable {
         cssCell2(
           wide ? cssCell4.cls('') : null,
           aclFormulaEditor({
-            gristTheme: this._ruleSet.accessRules.gristDoc.currentTheme,
             initialValue: this._aclFormula.get(),
             readOnly: this.isBuiltIn(),
             setValue: (value) => this._setAclFormula(value),
@@ -1671,6 +1718,7 @@ class ObsRulePart extends Disposable {
               );
             }),
             getSuggestions: (prefix) => this._completions.get(),
+            customiseEditor: (editor) => { this.focusEditor = () => editor.focus(); },
           }),
           testId('rule-acl-formula'),
         ),
@@ -1760,8 +1808,8 @@ class ObsRulePart extends Disposable {
     return this.isBuiltIn() && this._ruleSet.getFirstBuiltIn() !== this;
   }
 
-  private async _setAclFormula(text: string) {
-    if (text === this._aclFormula.get()) { return; }
+  private async _setAclFormula(text: string, initial: boolean = false) {
+    if (text === this._aclFormula.get() && !initial) { return; }
     this._aclFormula.set(text);
     this._checkPending.set(true);
     this._formulaProperties.set({});
@@ -1779,6 +1827,12 @@ class ObsRulePart extends Disposable {
   private _warnInvalidColIds(colIds?: string[]) {
     if (!colIds || !colIds.length) { return false; }
     const allValid = new Set(this._ruleSet.getValidColIds());
+    const specialColumn = this._ruleSet.getSpecialColumn();
+    if (specialColumn === 'SeedRule') {
+      // We allow seed rules to refer to columns without checking
+      // them (until the seed rules are used).
+      return false;
+    }
     const invalid = colIds.filter(c => !allValid.has(c));
     if (invalid.length > 0) {
       return `Invalid columns: ${invalid.join(', ')}`;
@@ -1881,9 +1935,9 @@ function getChangedStatus(value: boolean): RuleStatus {
   return value ? RuleStatus.ChangedValid : RuleStatus.Unchanged;
 }
 
-function getAclFormulaProperties(part?: RulePart): FormulaProperties {
+function getAclFormulaProperties(part?: RulePart): PredicateFormulaProperties {
   const aclFormulaParsed = part?.origRecord?.aclFormulaParsed;
-  return aclFormulaParsed ? getFormulaProperties(JSON.parse(String(aclFormulaParsed))) : {};
+  return aclFormulaParsed ? getPredicateFormulaProperties(JSON.parse(String(aclFormulaParsed))) : {};
 }
 
 // Return a rule set if it applies to one of the specified columns.
@@ -1906,7 +1960,7 @@ const cssOuter = styled('div', `
   flex: auto;
   height: 100%;
   width: 100%;
-  max-width: 800px;
+  max-width: 1500px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -1969,10 +2023,17 @@ const cssInput = styled(textInput, `
   }
 `);
 
+const cssError = styled('div', `
+  color: ${theme.errorText};
+  margin-left: 56px;
+  margin-bottom: 8px;
+  margin-top: 4px;
+`);
+
 const cssConditionError = styled('div', `
+  color: ${theme.errorText};
   margin-top: 4px;
   width: 100%;
-  color: ${theme.errorText};
 `);
 
 /**

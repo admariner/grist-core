@@ -26,8 +26,11 @@ export class User extends BaseEntity {
   @Column({name: 'picture', type: String, nullable: true})
   public picture: string | null;
 
-  @Column({name: 'first_login_at', type: Date, nullable: true})
+  @Column({name: 'first_login_at', type: nativeValues.dateTimeType, nullable: true})
   public firstLoginAt: Date | null;
+
+  @Column({name: 'last_connection_at', type: nativeValues.dateTimeType, nullable: true})
+  public lastConnectionAt: Date | null;
 
   @OneToOne(type => Organization, organization => organization.owner)
   public personalOrg: Organization;

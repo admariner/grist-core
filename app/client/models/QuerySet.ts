@@ -26,6 +26,7 @@
  * TODO: client-side should show "..." or "50000 more rows not shown" in that case.
  * TODO: Reference columns don't work properly because always use a displayCol which relies on formulas
  */
+import {ClientColumnGettersByColId} from 'app/client/models/ClientColumnGetters';
 import DataTableModel from 'app/client/models/DataTableModel';
 import {DocModel} from 'app/client/models/DocModel';
 import {BaseFilteredRowSource, RowList, RowSource} from 'app/client/models/rowset';
@@ -36,11 +37,11 @@ import {DocData} from 'app/common/DocData';
 import {nativeCompare} from 'app/common/gutil';
 import {IRefCountSub, RefCountMap} from 'app/common/RefCountMap';
 import {getLinkingFilterFunc, RowFilterFunc} from 'app/common/RowFilterFunc';
-import {TableData as BaseTableData, UIRowId} from 'app/common/TableData';
+import {TableData as BaseTableData} from 'app/common/TableData';
 import {tbind} from 'app/common/tbind';
+import {UIRowId} from 'app/plugin/GristAPI';
 import {Disposable, Holder, IDisposableOwnerT} from 'grainjs';
 import * as ko from 'knockout';
-import {ClientColumnGettersByColId} from 'app/client/models/ClientColumnGetters';
 import debounce = require('lodash/debounce');
 
 // Limit on the how many rows to request for OnDemand tables.
@@ -122,6 +123,10 @@ export class DynamicQuerySet extends RowSource {
   // Shortcut to _holder.get().get().
   private _querySet?: QuerySet;
 
+  // A ticket number for the latest makeQuery() call. We use it to avoid calling cb() for
+  // superseded queries.
+  private _lastTicket = 0;
+
   // We could switch between several different queries quickly. If several queries are done
   // fetching at the same time (e.g. were already ready), debounce lets us only update the
   // query-set once to the last query.
@@ -159,10 +164,13 @@ export class DynamicQuerySet extends RowSource {
                    cb: (err: Error|null, changed: boolean) => void): void {
     const query: ClientQuery = {tableId: this._tableModel.tableData.tableId, filters, operations};
     const newQuerySet = this._querySetManager.useQuerySet(this._holder, query);
+    const ticket = this._getTicket();
 
     // CB should be called asynchronously, since surprising hard-to-debug interactions can happen
     // if it's sometimes synchronous and sometimes not.
     newQuerySet.fetchPromise.then(() => {
+      // Only if we weren't superseded by another query.
+      if (!ticket.isValid()) { return; }
       this._updateQuerySetDebounced(newQuerySet, cb);
     })
     .catch((err) => { cb(err, false); });
@@ -187,6 +195,13 @@ export class DynamicQuerySet extends RowSource {
     } catch (err) {
       cb(err, true);
     }
+  }
+
+  private _getTicket() {
+    const myTicket = ++this._lastTicket;
+    return {
+      isValid: () => this._lastTicket === myTicket
+    };
   }
 }
 

@@ -3,7 +3,9 @@ import { ALL_PERMISSION_PROPS, emptyPermissionSet,
          MixedPermissionSet, PartialPermissionSet, PermissionSet, TablePermissionSet,
          toMixed } from 'app/common/ACLPermissions';
 import { ACLRuleCollection } from 'app/common/ACLRuleCollection';
-import { AclMatchInput, RuleSet, UserInfo } from 'app/common/GranularAccessClause';
+import { RuleSet } from 'app/common/GranularAccessClause';
+import { PredicateFormulaInput } from 'app/common/PredicateFormula';
+import { User } from 'app/common/User';
 import { getSetMapValue } from 'app/common/gutil';
 import log from 'app/server/lib/log';
 import { mapValues } from 'lodash';
@@ -59,7 +61,7 @@ abstract class RuleInfo<MixedT extends TableT, TableT> {
 
   // Construct a RuleInfo for a particular input, which is a combination of user and
   // optionally a record.
-  constructor(protected _acls: ACLRuleCollection, protected _input: AclMatchInput) {}
+  constructor(protected _acls: ACLRuleCollection, protected _input: PredicateFormulaInput) {}
 
   public getColumnAspect(tableId: string, colId: string): MixedT {
     const ruleSet: RuleSet|undefined = this._acls.getColumnRuleSet(tableId, colId);
@@ -79,8 +81,8 @@ abstract class RuleInfo<MixedT extends TableT, TableT> {
     return this._mergeFullAccess(tableAccess);
   }
 
-  public getUser(): UserInfo {
-    return this._input.user;
+  public getUser(): User {
+    return this._input.user! as User;
   }
 
   protected abstract _processRule(ruleSet: RuleSet, defaultAccess?: () => MixedT): MixedT;
@@ -202,9 +204,10 @@ export class PermissionInfo extends RuleInfo<MixedPermissionSet, TablePermission
 
 /**
  * Evaluate a RuleSet on a given input (user and optionally record). If a record is needed but not
- * included, the result may include permission values like 'allowSome', 'denySome'.
+ * included, the result may include permission values like 'allowSome', 'denySome', or 'mixed' (for
+ * rules with memo).
  */
-function evaluateRule(ruleSet: RuleSet, input: AclMatchInput): PartialPermissionSet {
+function evaluateRule(ruleSet: RuleSet, input: PredicateFormulaInput): PartialPermissionSet {
   let pset: PartialPermissionSet = emptyPermissionSet();
   for (const rule of ruleSet.body) {
     try {
@@ -214,6 +217,42 @@ function evaluateRule(ruleSet: RuleSet, input: AclMatchInput): PartialPermission
     } catch (e) {
       if (e.code === 'NEED_ROW_DATA') {
         pset = mergePartialPermissions(pset, makePartialPermissions(rule.permissions));
+        if (rule.memo) {
+          // Quick reminder:
+          // - memos are only shown for denies, if user can't update/delete/create, they are not shown when user
+          //   can't read. Schema permissions are not row dependent.
+          // - memos can be extracted if ACL allows something, but they are not shown.
+          // - partial permissions are merged, so denySome + deny = deny, and allowSome + allow = allow.
+          // - but allow + denySome + deny = mixed, and allow + allowSome + deny = mixed.
+          // - mixed is a final state, it can't be combined with anything else and disables any optimizations (forces
+          //   row checks).
+          // - allowSome and denySome are not final states, they will be replaced by allow/deny/mixed.
+
+          // If rule has a memo, it will be shown if user is denied access to something, only if:
+          // - this rule denied this access
+          // - this rule would have allowed this access, but it didn't pass (e.g. row check failed, different user, etc)
+          //
+          // But there is one problem. If there is mix of deny and denySome (so some rules deny access based on the row,
+          // and some denies access unconditionally - or based on a user), the overall access is denied, and there is no
+          // reason to know exactly which row dependent rule denied it. So the access is denied at table/column level,
+          // without actually scanning the rows. This is a good optimization, but it means that we won't be able to show
+          // the memo, because we won't have the row data (rec in input) to test which rule (a row dependent rule)
+          // matched the data (see extractMemos below).
+
+          // To fix that, we need to convert denySome to mixed, which is a final state, and will force row checks, as
+          // the optimizer won't be able to tell if the access is denied or not, without actually scanning each row that
+          // is touched in the bundle. With that, we will be able to determine which rule denied the access, as the
+          // check will be performed for each row.
+
+          // We don't need to do that for allowSome, as this bit is converted only to "allow" or "mixed". When it is
+          // "allow", the memos won't be shown, and when it is "mixed", rows will be scanned anyway.
+
+          // We'll replace only denySome in create/update/delete bits. read doesn't show memo and schemaEdit is not row
+          // dependent.
+          const dataChangePerms: Array<keyof PermissionSet> = ['create', 'update', 'delete'];
+          const changesData = (perm: string) => dataChangePerms.includes(perm as keyof PermissionSet);
+          pset = mapValues(pset, (val, perm) => val === 'denySome' && changesData(perm) ? "mixed" : val);
+        }
       } else {
         // Unexpected error. Interpret rule pessimistically.
         // Anything it would explicitly allow, no longer allow through this rule.
@@ -231,7 +270,7 @@ function evaluateRule(ruleSet: RuleSet, input: AclMatchInput): PartialPermission
  * If a rule has a memo, and passes, add that memo for all permissions it denies.
  * If a rule has a memo, and fails, add that memo for all permissions it allows.
  */
-function extractMemos(ruleSet: RuleSet, input: AclMatchInput): MemoSet {
+function extractMemos(ruleSet: RuleSet, input: PredicateFormulaInput): MemoSet {
   const pset = emptyMemoSet();
   for (const rule of ruleSet.body) {
     try {

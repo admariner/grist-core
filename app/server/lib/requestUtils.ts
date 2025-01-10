@@ -1,15 +1,17 @@
 import {ApiError} from 'app/common/ApiError';
 import {DEFAULT_HOME_SUBDOMAIN, isOrgInPathOnly, parseSubdomain, sanitizePathTail} from 'app/common/gristUrls';
 import * as gutil from 'app/common/gutil';
-import {DocScope, QueryResult, Scope} from 'app/gen-server/lib/HomeDBManager';
-import {getUser, getUserId, RequestWithLogin} from 'app/server/lib/Authorizer';
+import {DocScope, Scope} from 'app/gen-server/lib/homedb/HomeDBManager';
+import {QueryResult} from 'app/gen-server/lib/homedb/Interfaces';
+import {getUserId, RequestWithLogin} from 'app/server/lib/Authorizer';
 import {RequestWithOrg} from 'app/server/lib/extractOrg';
 import {RequestWithGrist} from 'app/server/lib/GristServer';
 import log from 'app/server/lib/log';
 import {Permit} from 'app/server/lib/Permit';
 import {Request, Response} from 'express';
-import _ from 'lodash';
+import {IncomingMessage} from 'http';
 import {Writable} from 'stream';
+import {TLSSocket} from 'tls';
 
 // log api details outside of dev environment (when GRIST_HOSTED_VERSION is set)
 const shouldLogApiDetails = Boolean(process.env.GRIST_HOSTED_VERSION);
@@ -20,8 +22,8 @@ export const TEST_HTTPS_OFFSET = process.env.GRIST_TEST_HTTPS_OFFSET ?
 
 // Database fields that we permit in entities but don't want to cross the api.
 const INTERNAL_FIELDS = new Set([
-  'apiKey', 'billingAccountId', 'firstLoginAt', 'filteredOut', 'ownerId', 'gracePeriodStart', 'stripeCustomerId',
-  'stripeSubscriptionId', 'stripePlanId', 'stripeProductId', 'userId', 'isFirstTimeUser', 'allowGoogleLogin',
+  'apiKey', 'billingAccountId', 'firstLoginAt', 'lastConnectionAt', 'filteredOut', 'ownerId', 'gracePeriodStart',
+  'stripeCustomerId', 'stripeSubscriptionId', 'stripeProductId', 'userId', 'isFirstTimeUser', 'allowGoogleLogin',
   'authSubject', 'usage', 'createdBy'
 ]);
 
@@ -76,54 +78,53 @@ export function getOrgUrl(req: Request, path: string = '/') {
 }
 
 /**
- * Returns true for requests from permitted origins.  For such requests, an
- * "Access-Control-Allow-Origin" header is added to the response.  Vary: Origin
- * is also set to reflect the fact that the headers are a function of the origin,
- * to prevent inappropriate caching on the browser's side.
+ * Returns true for requests from permitted origins.  For such requests, if
+ * a Response object is provided, an "Access-Control-Allow-Origin" header is added
+ * to the response.  Vary: Origin is also set to reflect the fact that the headers
+ * are a function of the origin, to prevent inappropriate caching on the browser's side.
  */
-export function trustOrigin(req: Request, resp: Response): boolean {
+export function trustOrigin(req: IncomingMessage, resp?: Response): boolean {
   // TODO: We may want to consider changing allowed origin values in the future.
   // Note that the request origin is undefined for non-CORS requests.
-  const origin = req.get('origin');
+  const origin = req.headers.origin;
   if (!origin) { return true; } // Not a CORS request.
-  if (process.env.GRIST_HOST && req.hostname === process.env.GRIST_HOST) { return true; }
-  if (!allowHost(req, new URL(origin)) && !isEnvironmentAllowedHost(new URL(origin))) { return false; }
+  if (!allowHost(req, new URL(origin))) { return false; }
 
-  // For a request to a custom domain, the full hostname must match.
-  resp.header("Access-Control-Allow-Origin", origin);
-  resp.header("Vary", "Origin");
+  if (resp) {
+    // For a request to a custom domain, the full hostname must match.
+    resp.header("Access-Control-Allow-Origin", origin);
+    resp.header("Vary", "Origin");
+  }
   return true;
 }
 
 // Returns whether req satisfies the given allowedHost. Unless req is to a custom domain, it is
 // enough if only the base domains match. Differing ports are allowed, which helps in dev/testing.
-export function allowHost(req: Request, allowedHost: string|URL) {
-  const mreq = req as RequestWithOrg;
+export function allowHost(req: IncomingMessage, allowedHost: string|URL) {
   const proto = getEndUserProtocol(req);
   const actualUrl = new URL(getOriginUrl(req));
   const allowedUrl = (typeof allowedHost === 'string') ? new URL(`${proto}://${allowedHost}`) : allowedHost;
-  if (mreq.isCustomHost) {
+  log.rawDebug('allowHost: ', {
+    req: (new URL(req.url!, `http://${req.headers.host}`).href),
+    origin: req.headers.origin,
+    actualUrl: actualUrl.hostname,
+    allowedUrl: allowedUrl.hostname,
+  });
+  if ((req as RequestWithOrg).isCustomHost) {
     // For a request to a custom domain, the full hostname must match.
-  return actualUrl.hostname === allowedUrl.hostname;
+    return actualUrl.hostname === allowedUrl.hostname;
   } else {
     // For requests to a native subdomains, only the base domain needs to match.
     const allowedDomain = parseSubdomain(allowedUrl.hostname);
     const actualDomain = parseSubdomain(actualUrl.hostname);
-    return (!_.isEmpty(actualDomain) ?
+    return actualDomain.base ?
       actualDomain.base === allowedDomain.base :
-      allowedUrl.hostname === actualUrl.hostname);
+      actualUrl.hostname === allowedUrl.hostname;
   }
 }
 
 export function matchesBaseDomain(domain: string, baseDomain: string) {
   return domain === baseDomain || domain.endsWith("." + baseDomain);
-}
-
-export function isEnvironmentAllowedHost(url: string|URL) {
-  const urlHost = (typeof url === 'string') ? url : url.hostname;
-  return (process.env.GRIST_ALLOWED_HOSTS || "").split(",").some(domain =>
-    domain && matchesBaseDomain(urlHost, domain)
-  );
 }
 
 export function isParameterOn(parameter: any): boolean {
@@ -210,10 +211,11 @@ export async function sendReply<T>(
       result: data,
     });
   }
-  if (result.status === 200) {
+  res.status(result.status);
+  if (result.status >= 200 && result.status < 300) {
     return res.json(data ?? null); // can't handle undefined
   } else {
-    return res.status(result.status).json({error: result.errMessage});
+    return res.json({error: result.errMessage});
   }
 }
 
@@ -256,14 +258,25 @@ export function getDocId(req: Request) {
   return mreq.docAuth.docId;
 }
 
-export function optStringParam(p: any): string|undefined {
-  if (typeof p === 'string') { return p; }
-  return undefined;
+export interface StringParamOptions {
+  allowed?: readonly string[];
+  /* Defaults to true. */
+  allowEmpty?: boolean;
 }
 
-export function stringParam(p: any, name: string, allowed?: readonly string[]): string {
+export function optStringParam(p: any, name: string, options: StringParamOptions = {}): string|undefined {
+  if (p === undefined) { return p; }
+
+  return stringParam(p, name, options);
+}
+
+export function stringParam(p: any, name: string, options: StringParamOptions = {}): string {
+  const {allowed, allowEmpty = true} = options;
   if (typeof p !== 'string') {
     throw new ApiError(`${name} parameter should be a string: ${p}`, 400);
+  }
+  if (!allowEmpty && p === '') {
+    throw new ApiError(`${name} parameter cannot be empty`, 400);
   }
   if (allowed && !allowed.includes(p)) {
     throw new ApiError(`${name} parameter ${p} should be one of ${allowed}`, 400);
@@ -271,8 +284,25 @@ export function stringParam(p: any, name: string, allowed?: readonly string[]): 
   return p;
 }
 
+export function stringArrayParam(p: any, name: string): string[] {
+  if (!Array.isArray(p)) {
+    throw new ApiError(`${name} parameter should be an array: ${p}`, 400);
+  }
+  if (p.some(el => typeof el !== 'string')) {
+    throw new ApiError(`${name} parameter should be a string array: ${p}`, 400);
+  }
+
+  return p;
+}
+
+export function optIntegerParam(p: any, name: string): number|undefined {
+  if (p === undefined) { return p; }
+
+  return integerParam(p, name);
+}
+
 export function integerParam(p: any, name: string): number {
-  if (typeof p === 'number') { return Math.floor(p); }
+  if (typeof p === 'number' && !Number.isNaN(p)) { return Math.floor(p); }
   if (typeof p === 'string') {
     const result = parseInt(p, 10);
     if (isNaN(result)) {
@@ -283,10 +313,15 @@ export function integerParam(p: any, name: string): number {
   throw new ApiError(`${name} parameter should be an integer: ${p}`, 400);
 }
 
-export function optIntegerParam(p: any): number|undefined {
-  if (typeof p === 'number') { return Math.floor(p); }
-  if (typeof p === 'string') { return parseInt(p, 10); }
-  return undefined;
+export function optBooleanParam(p: any, name: string): boolean|undefined {
+  if (p === undefined) { return p; }
+
+  return booleanParam(p, name);
+}
+
+export function booleanParam(p: any, name: string): boolean {
+  if (typeof p === 'boolean') { return p; }
+  throw new ApiError(`${name} parameter should be a boolean: ${p}`, 400);
 }
 
 export function optJsonParam(p: any, defaultValue: any): any {
@@ -305,10 +340,42 @@ export interface RequestWithGristInfo extends Request {
  * https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Forwarded-Proto
  * https://docs.aws.amazon.com/elasticloadbalancing/latest/classic/x-forwarded-headers.html
  */
-export function getOriginUrl(req: Request) {
-  const host = req.get('host')!;
+export function getOriginUrl(req: IncomingMessage) {
+  const host = req.headers.host;
   const protocol = getEndUserProtocol(req);
   return `${protocol}://${host}`;
+}
+
+/**
+ * Returns the original request IP address.
+ *
+ * If the request was made through a proxy or load balancer, the IP address
+ * is read from forwarded headers. See:
+ *
+ *  - https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Forwarded-For
+ *  - https://docs.aws.amazon.com/elasticloadbalancing/latest/classic/x-forwarded-headers.html
+ */
+export function getOriginIpAddress(req: IncomingMessage) {
+  return (
+    // May contain multiple comma-separated values; the first one is the original.
+    (req.headers['x-forwarded-for'] as string | undefined)
+      ?.split(',')
+      .map(value => value.trim())[0] ||
+    req.socket?.remoteAddress ||
+    undefined
+  );
+}
+
+/**
+ * Returns the request's "X-Forwarded-For" header, with the request's IP address
+ * appended to its value.
+ *
+ * If the header is absent from the request, a new header will be returned.
+ */
+export function buildXForwardedForHeader(req: Request): {'X-Forwarded-For': string}|undefined {
+  const values = req.get('X-Forwarded-For')?.split(',').map(value => value.trim()) ?? [];
+  if (req.socket.remoteAddress) { values.push(req.socket.remoteAddress); }
+  return values.length > 0 ? { 'X-Forwarded-For': values.join(', ') } : undefined;
 }
 
 /**
@@ -317,11 +384,13 @@ export function getOriginUrl(req: Request) {
  * otherwise X-Forwarded-Proto is set on the provided request, otherwise
  * the protocol of the request itself.
  */
-export function getEndUserProtocol(req: Request) {
+export function getEndUserProtocol(req: IncomingMessage) {
   if (process.env.APP_HOME_URL) {
     return new URL(process.env.APP_HOME_URL).protocol.replace(':', '');
   }
-  return req.get("X-Forwarded-Proto") || req.protocol;
+  // TODO we shouldn't blindly trust X-Forwarded-Proto. See the Express approach:
+  // https://expressjs.com/en/5x/api.html#trust.proxy.options.table
+  return req.headers["x-forwarded-proto"] || ((req.socket as TLSSocket)?.encrypted ? 'https' : 'http');
 }
 
 /**
@@ -351,10 +420,4 @@ export function addAbortHandler(req: Request, res: Writable, op: () => void) {
       op();
     }
   });
-}
-
-export function isDefaultUser(req: Request) {
-  const defaultEmail = process.env.GRIST_DEFAULT_EMAIL;
-  const {loginEmail} = getUser(req);
-  return defaultEmail && defaultEmail === loginEmail;
 }

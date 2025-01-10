@@ -20,7 +20,7 @@ export function addStatic(app: express.Express, rootDir?: string) {
           res.sendFile(req.params[0], {root:
                                         path.resolve(getAppRoot(), "static")}));
   app.use(express.static(rootDir || path.resolve(fixturesRoot, "sites"), {
-    setHeaders: (res) => {
+    setHeaders: (res: express.Response) => {
       res.set("Access-Control-Allow-Origin", "*");
     }
   }));
@@ -63,4 +63,32 @@ export async function serveSomething(setup: (app: express.Express) => void, port
   setup(app);
   const url = `http://localhost:${port}`;
   return {url, shutdown};
+}
+
+/**
+ * Creates a promise like object that can be resolved from outside.
+ */
+export class Defer {
+  private _resolve!: () => void;
+  private _reject!: (err: any) => void;
+  private _promise: Promise<void>;
+
+  constructor() {
+    this._promise = new Promise<void>((resolve, reject) => {
+      this._resolve = resolve;
+      this._reject = reject;
+    });
+  }
+
+  public get then() {
+    return this._promise.then.bind(this._promise);
+  }
+
+  public resolve() {
+    this._resolve();
+  }
+
+  public reject(err: any) {
+    this._reject(err);
+  }
 }

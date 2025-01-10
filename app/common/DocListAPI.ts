@@ -3,6 +3,7 @@ import {TableDataAction} from 'app/common/DocActions';
 import {FilteredDocUsageSummary} from 'app/common/DocUsage';
 import {Role} from 'app/common/roles';
 import {StringUnion} from 'app/common/StringUnion';
+import {UserInfo} from 'app/common/User';
 import {FullUser} from 'app/common/UserAPI';
 
 // Possible flavors of items in a list of documents.
@@ -15,6 +16,37 @@ export const OpenDocMode = StringUnion(
               // enable the editing UI experience and trigger a fork on any edit.
 );
 export type OpenDocMode = typeof OpenDocMode.type;
+
+/**
+ * A collection of options for opening documents on behalf of
+ * a user in special circumstances we have accumulated. This is
+ * specifically for the Grist front end, when setting up a websocket
+ * connection to a doc worker willing to serve a document. Remember
+ * that the front end is untrusted and any information it passes should
+ * be treated as user input.
+ */
+export interface OpenDocOptions {
+  /**
+   * Users may now access a single specific document (with a given docId)
+   * using distinct keys for which different access rules apply. When opening
+   * a document, the ID used in the URL may now be passed along so
+   * that the back-end can grant appropriate access.
+   */
+  originalUrlId?: string;
+
+  /**
+   * Access to a document by a user may be voluntarily limited to
+   * read-only, or to trigger forking on edits.
+   */
+  openMode?: OpenDocMode;
+
+  /**
+   * Access to a document may be modulated by URL parameters.
+   * These parameters become an attribute of the user, for
+   * access control.
+   */
+  linkParameters?: Record<string, string>;
+}
 
 /**
  * Represents an entry in the DocList.
@@ -43,6 +75,8 @@ export interface OpenLocalDocResult {
   clientId: string;  // the docFD is meaningful only in the context of this session
   doc: {[tableId: string]: TableDataAction};
   log: MinimalActionGroup[];
+  isTimingOn: boolean;
+  user: UserInfo;
   recoveryMode?: boolean;
   userOverride?: UserOverride;
   docUsage?: FilteredDocUsageSummary;
@@ -89,6 +123,5 @@ export interface DocListAPI {
   /**
    * Opens a document, loads it, subscribes to its userAction events, and returns its metadata.
    */
-  openDoc(userDocName: string, openMode?: OpenDocMode,
-          linkParameters?: Record<string, string>): Promise<OpenLocalDocResult>;
+  openDoc(userDocName: string, options?: OpenDocOptions): Promise<OpenLocalDocResult>;
 }

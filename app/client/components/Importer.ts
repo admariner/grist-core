@@ -7,6 +7,7 @@
 import {GristDoc} from 'app/client/components/GristDoc';
 import {buildParseOptionsForm, ParseOptionValues} from 'app/client/components/ParseOptions';
 import {PluginScreen} from 'app/client/components/PluginScreen';
+import {makeTestId} from 'app/client/lib/domUtils';
 import {FocusLayer} from 'app/client/lib/FocusLayer';
 import {ImportSourceElement} from 'app/client/lib/ImportSourceElement';
 import {makeT} from 'app/client/lib/localization';
@@ -46,7 +47,6 @@ import {byteString, not} from 'app/common/gutil';
 import {FetchUrlOptions, UploadResult} from 'app/common/uploads';
 import {ParseOptions, ParseOptionSchema} from 'app/plugin/FileParserAPI';
 import {
-  BindableValue,
   Computed,
   Disposable,
   dom,
@@ -65,7 +65,7 @@ import debounce = require('lodash/debounce');
 
 const t = makeT('Importer');
 // Custom testId that can be appended conditionally.
-const testId = (id: string, obs?: BindableValue<boolean>) => dom.cls('test-importer-' + id, obs ?? true);
+const testId = makeTestId('test-importer-');
 
 
 // We expect a function for creating the preview GridView, to avoid the need to require the
@@ -1082,6 +1082,7 @@ export class Importer extends DisposableWithEvents {
               options,
             )
           ]),
+          cssWarningText(dom.text(use => use(this._parseOptions)?.WARNING || ""), testId('warning')),
           dom.domComputed(use => {
             if (use(isSkipTable)) {
               return cssOverlay(t('Skip Table on Import'), testId('preview-overlay'));
@@ -1098,6 +1099,7 @@ export class Importer extends DisposableWithEvents {
         )
       );
     });
+
     const buttons = cssImportButtons(cssImportButtonsLine(
       bigPrimaryButton('Import',
         dom.on('click', () => this._maybeFinishImport(upload)),
@@ -1343,8 +1345,9 @@ export class Importer extends DisposableWithEvents {
       const column = use(field.column);
       return use(column.formula);
     });
-    const codeOptions = {gristTheme: this._gristDoc.currentTheme, placeholder: 'Skip', maxLines: 1};
-    return cssFieldFormula(formula, codeOptions,
+    const codeOptions = {placeholder: 'Skip', maxLines: 1};
+    return dom.create(buildHighlightedCode, formula, codeOptions,
+      dom.cls(cssFieldFormula.className),
       dom.cls('disabled'),
       dom.cls('formula_field_sidepane'),
       {tabIndex: '-1'},
@@ -1369,6 +1372,10 @@ export class Importer extends DisposableWithEvents {
         (p: ParseOptions) => {
           anotherScreen.dispose();
           this._parseOptions.set(p);
+          // Drop what we previously matched because we may have different columns.
+          // If user manually matched, then changed import options, they'll have to re-match; when
+          // columns change at all, the alternative has incorrect columns in UI and is more confusing.
+          this._sourceInfoArray.set([]);
           this._reImport(upload).catch((err) => reportError(err));
         },
         () => {
@@ -1515,6 +1522,12 @@ const cssTabsWrapper = styled('div', `
   border-bottom: 1px solid ${theme.importerTableInfoBorder};
   display: flex;
   flex-direction: column;
+`);
+
+const cssWarningText = styled('div', `
+  margin-bottom: 8px;
+  color: ${theme.errorText};
+  white-space: pre-line;
 `);
 
 const cssTableList = styled('div', `
@@ -1689,7 +1702,7 @@ const cssColumnMatchRow = styled('div', `
   }
 `);
 
-const cssFieldFormula = styled(buildHighlightedCode, `
+const cssFieldFormula = styled('div', `
   flex: auto;
   cursor: pointer;
   margin-top: 1px;

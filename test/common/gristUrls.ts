@@ -1,5 +1,6 @@
-import {decodeUrl, IGristUrlState, parseFirstUrlPart} from 'app/common/gristUrls';
+import {decodeUrl, getHostType, getSlugIfNeeded, IGristUrlState, parseFirstUrlPart} from 'app/common/gristUrls';
 import {assert} from 'chai';
+import * as testUtils from 'test/server/testUtils';
 
 describe('gristUrls', function() {
 
@@ -45,6 +46,18 @@ describe('gristUrls', function() {
         {params: {themeName: 'GristDark'}},
       );
     });
+
+    it('should detect API URLs', function() {
+      assertUrlDecode(
+        'http://localhost/o/docs/api/docs',
+        {api: true},
+      );
+
+      assertUrlDecode(
+        'http://public.getgrist.com/api/docs',
+        {api: true},
+      );
+    });
   });
 
   describe('parseFirstUrlPart', function() {
@@ -62,6 +75,81 @@ describe('gristUrls', function() {
       assert.deepEqual(parseFirstUrlPart('o', '/o/?x#y'), {path: '/o/?x#y'});
       assert.deepEqual(parseFirstUrlPart('o', '/#y'), {path: '/#y'});
       assert.deepEqual(parseFirstUrlPart('o', ''), {path: ''});
+    });
+  });
+
+  describe('getHostType', function() {
+    const defaultOptions = {
+      baseDomain: 'getgrist.com',
+      pluginUrl: 'https://plugin.getgrist.com',
+    };
+
+    let oldEnv: testUtils.EnvironmentSnapshot;
+
+    beforeEach(function () {
+      oldEnv = new testUtils.EnvironmentSnapshot();
+    });
+
+    afterEach(function () {
+      oldEnv.restore();
+    });
+
+    it('should interpret localhost as "native"', function() {
+      assert.equal(getHostType('localhost', defaultOptions), 'native');
+      assert.equal(getHostType('localhost:8080', defaultOptions), 'native');
+    });
+
+    it('should interpret base domain as "native"', function() {
+      assert.equal(getHostType('getgrist.com', defaultOptions), 'native');
+      assert.equal(getHostType('www.getgrist.com', defaultOptions), 'native');
+      assert.equal(getHostType('foo.getgrist.com', defaultOptions), 'native');
+      assert.equal(getHostType('foo.getgrist.com:8080', defaultOptions), 'native');
+    });
+
+    it('should interpret plugin domain as "plugin"', function() {
+      assert.equal(getHostType('plugin.getgrist.com', defaultOptions), 'plugin');
+      assert.equal(getHostType('PLUGIN.getgrist.com', { pluginUrl: 'https://pLuGin.getgrist.com' }), 'plugin');
+    });
+
+    it('should interpret other domains as "custom"', function() {
+      assert.equal(getHostType('foo.com', defaultOptions), 'custom');
+      assert.equal(getHostType('foo.bar.com', defaultOptions), 'custom');
+    });
+
+    it('should interpret doc internal url as "native"', function() {
+      process.env.APP_DOC_INTERNAL_URL = 'https://doc-worker-123.internal/path';
+      assert.equal(getHostType('doc-worker-123.internal', defaultOptions), 'native');
+      assert.equal(getHostType('doc-worker-123.internal:8080', defaultOptions), 'custom');
+      assert.equal(getHostType('doc-worker-124.internal', defaultOptions), 'custom');
+
+      process.env.APP_DOC_INTERNAL_URL = 'https://doc-worker-123.internal:8080/path';
+      assert.equal(getHostType('doc-worker-123.internal:8080', defaultOptions), 'native');
+      assert.equal(getHostType('doc-worker-123.internal', defaultOptions), 'custom');
+      assert.equal(getHostType('doc-worker-124.internal:8080', defaultOptions), 'custom');
+      assert.equal(getHostType('doc-worker-123.internal:8079', defaultOptions), 'custom');
+    });
+  });
+
+  describe('getSlugIfNeeded', function() {
+    it('should only return a slug when a valid urlId is used', function() {
+      assert.strictEqual(getSlugIfNeeded({id: '1234567890abcdef', urlId: '1234567890ab', name: 'Foo'}), 'Foo');
+      // urlId too short
+      assert.strictEqual(getSlugIfNeeded({id: '1234567890abcdef', urlId: '12345678', name: 'Foo'}), undefined);
+      // urlId doesn't match docId
+      assert.strictEqual(getSlugIfNeeded({id: '1234567890abcdef', urlId: '1234567890ac', name: 'Foo'}), undefined);
+      // no urlId
+      assert.strictEqual(getSlugIfNeeded({id: '1234567890abcdef', urlId: '', name: 'Foo'}), undefined);
+      assert.strictEqual(getSlugIfNeeded({id: '1234567890abcdef', urlId: null, name: 'Foo'}), undefined);
+    });
+
+    it('should leave only alphamerics after replacing reasonable unicode chars', function() {
+      const id = '1234567890abcdef', urlId = '1234567890ab';
+      // This is mainly a test of the `slugify` library we now use. What matters isn't the
+      // specific result, but that the result is reasonable.
+      assert.strictEqual(getSlugIfNeeded({id, urlId, name: 'Foo'}), 'Foo');
+      assert.strictEqual(getSlugIfNeeded({id, urlId, name: "Hélène's résumé"}), 'Helenes-resume');
+      assert.strictEqual(getSlugIfNeeded({id, urlId, name: "Привіт, Їжак!"}), 'Privit-Yizhak');
+      assert.strictEqual(getSlugIfNeeded({id, urlId, name: "S&P500 is ~$4,894.16"}), 'SandP500-is-dollar489416');
     });
   });
 });

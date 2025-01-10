@@ -11,11 +11,10 @@ import {User} from 'app/gen-server/entity/User';
 import {Workspace} from 'app/gen-server/entity/Workspace';
 import {SessionUserObj} from 'app/server/lib/BrowserSession';
 import {getDocWorkerMap} from 'app/gen-server/lib/DocWorkerMap';
-import {HomeDBManager} from 'app/gen-server/lib/HomeDBManager';
+import {HomeDBManager} from 'app/gen-server/lib/homedb/HomeDBManager';
 import * as docUtils from 'app/server/lib/docUtils';
 import {FlexServer, FlexServerOptions} from 'app/server/lib/FlexServer';
-import log from 'app/server/lib/log';
-import {main as mergedServerMain, ServerType} from 'app/server/mergedServerMain';
+import {MergedServer, ServerType} from 'app/server/MergedServer';
 import axios from 'axios';
 import FormData from 'form-data';
 import fetch from 'node-fetch';
@@ -23,6 +22,7 @@ import * as path from 'path';
 import {createInitialDb, removeConnection, setUpDB} from 'test/gen-server/seed';
 import {setPlan} from 'test/gen-server/testUtils';
 import {fixturesRoot} from 'test/server/testUtils';
+import {isAffirmative} from 'app/common/gutil';
 
 export class TestServer {
   public serverUrl: string;
@@ -37,9 +37,10 @@ export class TestServer {
   public async start(servers: ServerType[] = ["home"],
                      options: FlexServerOptions = {}): Promise<string> {
     await createInitialDb();
-    this.server = await mergedServerMain(0, servers, {logToConsole: false,
-                                                      externalStorage: false,
-                                                      ...options});
+    const mergedServer = await MergedServer.create(0, servers, {logToConsole: isAffirmative(process.env.DEBUG),
+                                                      externalStorage: false, ...options});
+    await mergedServer.run();
+    this.server = mergedServer.flexServer;
     this.serverUrl = this.server.getOwnUrl();
     this.dbManager = this.server.getHomeDBManager();
     this.defaultSession = new TestSession(this.server);
@@ -52,9 +53,11 @@ export class TestServer {
     // TypeORM doesn't give us a very clean way to shut down the db connection,
     // and node-sqlite3 has become fussier about this, and in regular tests
     // we substitute sqlite for postgres.
-    for (let i = 0; i < 30; i++) {
-      if (!this.server.getNotifier().testPending) { break; }
-      await delay(100);
+    if (this.server.hasNotifier()) {
+      for (let i = 0; i < 30; i++) {
+        if (!this.server.getNotifier().testPending) { break; }
+        await delay(100);
+      }
     }
     await removeConnection();
   }
@@ -252,7 +255,7 @@ export class TestSession {
   ) {
     const resp = await axios.get(`${this.home.getOwnUrl()}/test/session`,
                                  {validateStatus: (s => s < 400), headers: this.headers});
-    const cookie = this.headers.Cookie || resp.headers['set-cookie'][0];
+    const cookie = this.headers.Cookie || resp.headers['set-cookie']![0];
     const cid = decodeURIComponent(cookie.split('=')[1].split(';')[0]);
     const sessionId = this.home.getSessions().getSessionIdFromCookie(cid);
     const scopedSession = this.home.getSessions().getOrCreateSession(sessionId as string, org, '');
@@ -261,7 +264,7 @@ export class TestSession {
     if (clearCache) { this.home.getSessions().clearCacheIfNeeded(); }
     this.headers.Cookie = cookie;
     return {
-      validateStatus: (status: number) => true,
+      validateStatus: (_status: number) => true,
       headers: {
         'Cookie': cookie,
         'X-Requested-With': 'XMLHttpRequest',
@@ -287,7 +290,6 @@ export class TestSession {
       fetch: fetch as any,
       headers,
       newFormData: () => new FormData() as any,
-      logger: log,
     });
     // Make sure api is functioning, and create user if this is their first time to hit API.
     if (checkAccess) { await api.getOrg('current'); }

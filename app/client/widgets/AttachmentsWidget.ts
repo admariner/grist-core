@@ -1,9 +1,10 @@
 import {CellValue} from "app/common/DocActions";
 import * as commands from 'app/client/components/commands';
 import {dragOverClass} from 'app/client/lib/dom';
+import {stopEvent} from 'app/client/lib/domUtils';
 import {selectFiles, uploadFiles} from 'app/client/lib/uploads';
 import {cssRow} from 'app/client/ui/RightPanelStyles';
-import {colors, testId, vars} from 'app/client/ui2018/cssVars';
+import {colors, testId, theme, vars} from 'app/client/ui2018/cssVars';
 import {NewAbstractWidget} from 'app/client/widgets/NewAbstractWidget';
 import {encodeQueryParams} from 'app/common/gutil';
 import {ViewFieldRec} from 'app/client/models/entities/ViewFieldRec';
@@ -13,7 +14,7 @@ import { SingleCell } from 'app/common/TableData';
 import {KoSaveableObservable} from 'app/client/models/modelUtil';
 import {UploadResult} from 'app/common/uploads';
 import { GristObjCode } from 'app/plugin/GristData';
-import {Computed, dom, fromKo, input, onElem, styled} from 'grainjs';
+import {Computed, dom, DomContents, fromKo, input, onElem, styled} from 'grainjs';
 import {extname} from 'path';
 
 
@@ -55,7 +56,10 @@ export class AttachmentsWidget extends NewAbstractWidget {
       dragOverClass('attachment_drag_over'),
       cssAttachmentIcon(
         cssAttachmentIcon.cls('-hover', (use) => use(values).length > 0),
-        dom.on('click', () => this._selectAndSave(row, cellValue)),
+        dom.on('click', async (ev) => {
+          stopEvent(ev);
+          await this._selectAndSave(row, cellValue);
+        }),
         testId('attachment-icon'),
       ),
       dom.maybe<number>(row.id, rowId => {
@@ -69,7 +73,7 @@ export class AttachmentsWidget extends NewAbstractWidget {
     );
   }
 
-  public buildConfigDom(): Element {
+  public buildConfigDom(): DomContents {
     const options = this.field.config.options;
     const height = options.prop('height');
     const inputRange = input(
@@ -189,18 +193,18 @@ const cssAttachmentWidget = styled('div', `
 const cssAttachmentIcon = styled('div.glyphicon.glyphicon-paperclip', `
   position: absolute;
   top: 2px;
-  left: 2px;
+  left: 5px;
   padding: 2px;
-  background-color: #D0D0D0;
-  color: white;
+  background-color: ${theme.attachmentsCellIconBg};
+  color: ${theme.attachmentsCellIconFg};
   border-radius: 2px;
   border: none;
   cursor: pointer;
-  box-shadow: 0 0 0 1px white;
+  box-shadow: 0 0 0 1px ${theme.cellEditorBg};
   z-index: 1;
 
   &:hover {
-    background-color: #3290BF;
+    background-color: ${theme.attachmentsCellIconHoverBg};
   }
 
   &-hover {
@@ -222,12 +226,12 @@ const cssAttachmentPreview = styled('div', `
   justify-content: center;
   z-index: 0;
   &:hover {
-    border-color: ${colors.lightGreen};
+    border-color: ${theme.cursor};
   }
 `);
 
 const cssSizeLabel = styled('div', `
-  color: ${colors.slate};
+  color: ${theme.lightText};
   margin-right: 9px;
 `);
 

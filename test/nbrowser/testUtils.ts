@@ -16,7 +16,8 @@
  * first-failure for debugging and quick reruns.
  */
 import log from 'app/server/lib/log';
-import {addToRepl, assert, driver, enableDebugCapture, Key, setOptionsModifyFunc, useServer} from 'mocha-webdriver';
+import {addToRepl, assert, Capability, driver, enableDebugCapture, ITimeouts,
+  Key, setOptionsModifyFunc, useServer} from 'mocha-webdriver';
 import * as gu from 'test/nbrowser/gristUtils';
 import {server} from 'test/nbrowser/testServer';
 
@@ -32,6 +33,17 @@ setOptionsModifyFunc(({chromeOpts, firefoxOpts}) => {
   // Set "kiosk" printing that saves to PDF without offering any dialogs. This applies to regular
   // (non-headless) Chrome. On headless Chrome, no dialog or output occurs regardless.
   chromeOpts.addArguments("--kiosk-printing");
+  // Latest chrome version 127, has started ignoring alerts and popups when controlled via a
+  // webdriver.
+  // https://github.com/SeleniumHQ/selenium/issues/14290
+  // According to the article above, popups and alerts are still shown in `BiDi` sessions. While we
+  // don't have latest webdriver library (where the new `enableBiDi` method is exposed), it can be
+  // toggled by using the `set` method in `capabilities` interface, as it is done here (long URL):
+
+  // eslint-disable-next-line max-len
+  // https://github.com/shs96c/selenium/blob/ff82c4af6a493321d9eaec6ba8fa8589e4aa824d/javascript/node/selenium-webdriver/firefox.js#L415
+  chromeOpts.set('webSocketUrl', true);
+  chromeOpts.set(Capability.UNHANDLED_PROMPT_BEHAVIOR, "ignore");
 
   chromeOpts.setUserPreferences({
     // Don't show popups to save passwords, which are shown when running against a deployment when
@@ -72,16 +84,25 @@ setOptionsModifyFunc(({chromeOpts, firefoxOpts}) => {
     }),
     "download.default_directory": server.testDir,
     "savefile.default_directory": server.testDir,
+    "autofill": {
+      profile_enabled: false,
+      credit_card_enabled: false,
+    },
   });
 });
 
 interface TestSuiteOptions {
   samples?: boolean;
+  tutorial?: boolean;
   team?: boolean;
 
   // If set, clear user preferences for all test users at the end of the suite. It should be used
   // for suites that modify preferences. Not that it only works in dev, not in deployment tests.
   clearUserPrefs?: boolean;
+
+  // Max milliseconds to wait for a page to finish loading. E.g. affects clicks that cause
+  // navigation, which wait for that. A navigation that takes longer will throw an exception.
+  pageLoadTimeout?: number;
 }
 
 // Sets up the test suite to use the Grist server, and also to record logs and screenshots after
@@ -121,6 +142,10 @@ export function setupTestSuite(options?: TestSuiteOptions) {
   // Close database until next test explicitly needs it, to avoid conflicts
   // with tests that don't use the same server.
   after(async () => server.closeDatabase());
+
+  if (options?.pageLoadTimeout) {
+    setDriverTimeoutsForSuite({pageLoad: options.pageLoadTimeout});
+  }
 
   return setupRequirement({team: true, ...options});
 }
@@ -173,6 +198,21 @@ async function clearTestUserPreferences() {
   let emails = Object.keys(gu.TestUserEnum).map(user => gu.translateUser(user as any).email);
   emails = [...new Set(emails)];    // Remove duplicates.
   await dbManager.testClearUserPrefs(emails);
+}
+
+export function setDriverTimeoutsForSuite(newTimeouts: ITimeouts) {
+  let prevTimeouts: ITimeouts|null = null;
+
+  before(async () => {
+    prevTimeouts = await driver.manage().getTimeouts();
+    await driver.manage().setTimeouts(newTimeouts);
+  });
+
+  after(async () => {
+    if (prevTimeouts) {
+      await driver.manage().setTimeouts(prevTimeouts);
+    }
+  });
 }
 
 export type CleanupFunc = (() => void|Promise<void>);
@@ -230,10 +270,11 @@ export function setupCleanup() {
  */
 export function setupRequirement(options: TestSuiteOptions) {
   const cleanup = setupCleanup();
-  if (options.samples) {
+  const {samples, tutorial} = options;
+  if (samples || tutorial) {
     if (process.env.TEST_ADD_SAMPLES || !server.isExternalServer()) {
       gu.shareSupportWorkspaceForSuite(); // TODO: Remove after the support workspace is removed from the backend.
-      gu.addSamplesForSuite();
+      gu.addSamplesForSuite(tutorial);
     }
   }
 

@@ -2,13 +2,10 @@ import {ApiError, ApiErrorDetails} from 'app/common/ApiError';
 import axios, {AxiosRequestConfig, AxiosResponse} from 'axios';
 import {tbind} from './tbind';
 
-export type ILogger = Pick<Console, 'log'|'debug'|'info'|'warn'|'error'>;
-
 export interface IOptions {
   headers?: Record<string, string>;
   fetch?: typeof fetch;
   newFormData?: () => FormData;  // constructor for FormData depends on platform.
-  logger?: ILogger;
   extraParameters?: Map<string, string>;  // if set, add query parameters to requests.
 }
 
@@ -54,18 +51,28 @@ export class BaseAPI {
   protected fetch: typeof fetch;
   protected newFormData: () => FormData;
   private _headers: Record<string, string>;
-  private _logger: ILogger;
   private _extraParameters?: Map<string, string>;
 
   constructor(options: IOptions = {}) {
     this.fetch = options.fetch || tbind(window.fetch, window);
     this.newFormData = options.newFormData || (() => new FormData());
-    this._logger = options.logger || console;
     this._headers = {
       'Content-Type': 'application/json',
       'X-Requested-With': 'XMLHttpRequest',
       ...options.headers
     };
+    // If we are in the client, and have a boot key query parameter,
+    // pass it on as a header to make it available for authentication.
+    // This is a fallback mechanism if auth is broken to access the
+    // admin panel.
+    // TODO: should this be more selective?
+    if (typeof window !== 'undefined' && window.location &&
+        window.location.pathname.endsWith('/admin')) {
+      const bootKey = new URLSearchParams(window.location.search).get('boot-key');
+      if (bootKey) {
+        this._headers['X-Boot-Key'] = bootKey;
+      }
+    }
     this._extraParameters = options.extraParameters;
   }
 
@@ -116,8 +123,7 @@ export class BaseAPI {
       }
     }
     const resp = await this.fetch(input, init);
-    this._logger.log("Fetched", input);
-    if (resp.status !== 200) {
+    if (!resp.ok) {
       const body = await resp.json().catch(() => ({}));
       throwApiError(input, resp, body);
     }

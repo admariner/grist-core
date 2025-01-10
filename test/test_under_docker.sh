@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # This runs browser tests with the server started using docker, to
 # catch any configuration problems.
@@ -13,6 +13,8 @@ set -o errexit   # same as set -e: exit on command failures
 trap 'cleanup' EXIT
 trap 'echo "Exiting on SIGINT"; exit 1' INT
 trap 'echo "Exiting on SIGTERM"; exit 1' TERM
+
+source $(dirname $0)/test_env.sh
 
 PORT=8585
 DOCKER_CONTAINER=grist-core-test
@@ -31,18 +33,24 @@ cleanup() {
 GRIST_LOG_LEVEL="error"
 if [[ "${DEBUG:-}" == 1 ]]; then
   GRIST_LOG_LEVEL=""
+  GRIST_LOG_HTTP="true"
+  GRIST_LOG_HTTP_BODY="true"
 fi
 
+set -x
 docker run --name $DOCKER_CONTAINER --rm \
   --env VERBOSE=${DEBUG:-} \
   -p $PORT:$PORT --env PORT=$PORT \
   --env GRIST_SESSION_COOKIE=grist_test_cookie \
   --env GRIST_TEST_LOGIN=1 \
   --env GRIST_LOG_LEVEL=$GRIST_LOG_LEVEL \
-  --env GRIST_LOG_SKIP_HTTP=${DEBUG:-false} \
+  --env GRIST_LOG_HTTP=${GRIST_LOG_HTTP:-false} \
+  --env GRIST_LOG_HTTP_BODY=${GRIST_LOG_HTTP_BODY:-false} \
   --env TEST_SUPPORT_API_KEY=api_key_for_support \
   --env GRIST_TEMPLATE_ORG=templates \
+  ${TEST_DOCKER_OPTIONS:-} \
   ${TEST_IMAGE:-gristlabs/grist} &
+set +x
 
 DOCKER_PID="$!"
 
@@ -62,7 +70,6 @@ fi
 
 TEST_ADD_SAMPLES=1 TEST_ACCOUNT_PASSWORD=not-needed \
   HOME_URL=http://localhost:8585 \
-  GRIST_SESSION_COOKIE=grist_test_cookie \
   GRIST_TEST_LOGIN=1 \
   NODE_PATH=_build:_build/stubs \
   $MOCHA _build/test/deployment/*.js --slow 6000 -g "${GREP_TESTS:-}" "$@"

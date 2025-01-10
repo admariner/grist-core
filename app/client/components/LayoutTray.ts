@@ -195,9 +195,9 @@ export class LayoutTray extends DisposableWithEvents {
         box.dispose();
 
         // And ask the viewLayout to save the specs.
-        viewLayout.saveLayoutSpec();
+        viewLayout.saveLayoutSpec().catch(reportError);
       },
-      expandSection: () => {
+      restoreSection: () => {
         // Get the section that is collapsed and clicked (we are setting this value).
         const leafId = viewLayout.viewModel.activeCollapsedSectionId();
         if (!leafId) { return; }
@@ -206,23 +206,28 @@ export class LayoutTray extends DisposableWithEvents {
           viewLayout.viewModel.activeCollapsedSections.peek().filter(x => x !== leafId)
         );
         viewLayout.viewModel.activeSectionId(leafId);
-        viewLayout.saveLayoutSpec();
+        viewLayout.saveLayoutSpec().catch(reportError);
       },
       // Delete collapsed section.
-      deleteCollapsedSection: () => {
+      deleteCollapsedSection: async () => {
         // This section is still in the view (but not in the layout). So we can just remove it.
         const leafId = viewLayout.viewModel.activeCollapsedSectionId();
         if (!leafId) { return; }
-        this.viewLayout.removeViewSection(leafId);
-        // We need to manually update the layout. Main layout editor doesn't care about missing sections.
-        // but we can't afford that. Without removing it, user can add another section that will be collapsed
-        // from the start, as the id will be the same as the one we just removed.
-        const currentSpec = viewLayout.viewModel.layoutSpecObj();
-        const validSections = new Set(viewLayout.viewModel.viewSections.peek().peek().map(vs => vs.id.peek()));
-        validSections.delete(leafId);
-        currentSpec.collapsed = currentSpec.collapsed
-          ?.filter(x => typeof x.leaf === 'number' && validSections.has(x.leaf));
-        viewLayout.saveLayoutSpec(currentSpec);
+
+        viewLayout.docModel.docData.bundleActions('removing section', async () => {
+          if (!await this.viewLayout.removeViewSection(leafId)) {
+            return;
+          }
+          // We need to manually update the layout. Main layout editor doesn't care about missing sections.
+          // but we can't afford that. Without removing it, user can add another section that will be collapsed
+          // from the start, as the id will be the same as the one we just removed.
+          const currentSpec = viewLayout.viewModel.layoutSpecObj();
+          const validSections = new Set(viewLayout.viewModel.viewSections.peek().peek().map(vs => vs.id.peek()));
+          validSections.delete(leafId);
+          currentSpec.collapsed = currentSpec.collapsed
+            ?.filter(x => typeof x.leaf === 'number' && validSections.has(x.leaf));
+          await viewLayout.saveLayoutSpec(currentSpec);
+        }).catch(reportError);
       }
     };
     this.autoDispose(commands.createGroup(commandGroup, this, true));
@@ -843,7 +848,7 @@ class ExternalLeaf extends Disposable implements Dropped {
         // and the section won't be created on time.
         this.model.viewLayout.layoutEditor.triggerUserEditStop();
         // Manually save the layout.
-        this.model.viewLayout.saveLayoutSpec();
+        this.model.viewLayout.saveLayoutSpec().catch(reportError);
       }
     }));
 
@@ -1179,7 +1184,7 @@ const cssCollapsedTray = styled('div.collapsed_layout', `
   overflow: hidden;
   transition: height 0.2s;
   position: relative;
-  margin: calc(-1 * var(--view-content-page-margin, 12px));
+  margin: calc(-1 * var(--view-content-page-padding, 12px));
   margin-bottom: 0;
   user-select: none;
   background-color: ${theme.pageBg};
@@ -1192,6 +1197,11 @@ const cssCollapsedTray = styled('div.collapsed_layout', `
   &-is-target {
     outline: 2px dashed #7B8CEA;
     background: rgba(123, 140, 234, 0.1);
+  }
+  @media print {
+    & {
+      display: none;
+    }
   }
 `
 );

@@ -6,8 +6,7 @@
 
 import {commonUrls} from 'app/common/gristUrls';
 import {isAffirmative} from 'app/common/gutil';
-import {HomeDBManager} from 'app/gen-server/lib/HomeDBManager';
-import {TEAM_FREE_PLAN} from 'app/common/Features';
+import {HomeDBManager} from 'app/gen-server/lib/homedb/HomeDBManager';
 
 const debugging = isAffirmative(process.env.DEBUG) || isAffirmative(process.env.VERBOSE);
 
@@ -15,7 +14,6 @@ const debugging = isAffirmative(process.env.DEBUG) || isAffirmative(process.env.
 if (!debugging) {
   // Be a lot less noisy by default.
   setDefaultEnv('GRIST_LOG_LEVEL', 'error');
-  setDefaultEnv('GRIST_LOG_SKIP_HTTP', 'true');
 }
 
 // Use a distinct cookie.  Bump version to 2.
@@ -31,11 +29,13 @@ if (!process.env.GRIST_SINGLE_ORG) {
   setDefaultEnv('GRIST_ORG_IN_PATH', 'true');
 }
 
-setDefaultEnv('GRIST_UI_FEATURES', 'helpCenter,billing,templates,multiSite,multiAccounts,sendToDrive');
+setDefaultEnv('GRIST_UI_FEATURES',
+  'helpCenter,billing,templates,multiSite,multiAccounts,sendToDrive,createSite,supportGrist');
 setDefaultEnv('GRIST_WIDGET_LIST_URL', commonUrls.gristLabsWidgetRepository);
 import {updateDb} from 'app/server/lib/dbUtils';
-import {main as mergedServerMain} from 'app/server/mergedServerMain';
+import {MergedServer, parseServerTypes} from 'app/server/MergedServer';
 import * as fse from 'fs-extra';
+import {runPrometheusExporter} from './prometheus-exporter';
 
 const G = {
   port: parseInt(process.env.PORT!, 10) || 8484,
@@ -48,19 +48,7 @@ function setDefaultEnv(name: string, value: string) {
   }
 }
 
-// tslint:disable:no-console
-export async function main() {
-  console.log('Welcome to Grist.');
-  if (!debugging) {
-    console.log(`In quiet mode, see http://localhost:${G.port} to use.`);
-    console.log('For full logs, re-run with DEBUG=1');
-  }
-
-  // If SAML is not configured, there's no login system, so provide a default email address.
-  setDefaultEnv('GRIST_DEFAULT_EMAIL', 'you@example.com');
-  // Set directory for uploaded documents.
-  setDefaultEnv('GRIST_DATA_DIR', 'docs');
-  await fse.mkdirp(process.env.GRIST_DATA_DIR!);
+async function setupDb() {
   // Make a blank db if needed.
   if (process.env.TEST_CLEAN_DATABASE) {
     const {createInitialDb} = require('test/gen-server/seed');
@@ -90,30 +78,61 @@ export async function main() {
       }
       const profile = {email, name: email};
       const user = await db.getUserByLogin(email, {profile});
-      if (!user) {
-        // This should not happen.
-        throw new Error('failed to create GRIST_DEFAULT_EMAIL user');
-      }
       db.unwrapQueryResult(await db.addOrg(user, {
         name: org,
         domain: org,
       }, {
         setUserAsOwner: false,
         useNewPlan: true,
-        planType: TEAM_FREE_PLAN
       }));
     }
   }
+}
+
+// tslint:disable:no-console
+export async function main() {
+  console.log('Welcome to Grist.');
+  if (!debugging) {
+    console.log(`In quiet mode, see http://localhost:${G.port} to use.`);
+    console.log('For full logs, re-run with DEBUG=1');
+  }
+
+  if (process.env.GRIST_PROMCLIENT_PORT) {
+    runPrometheusExporter(parseInt(process.env.GRIST_PROMCLIENT_PORT, 10));
+  }
+
+  // If SAML is not configured, there's no login system, so provide a default email address.
+  setDefaultEnv('GRIST_DEFAULT_EMAIL', 'you@example.com');
+  // Set directory for uploaded documents.
+  setDefaultEnv('GRIST_DATA_DIR', 'docs');
+  setDefaultEnv('GRIST_SERVERS', 'home,docs,static');
+  if (process.env.GRIST_SERVERS?.includes('home')) {
+    // By default, we will now start an untrusted port alongside a
+    // home server, for bundled custom widgets.
+    // Suppress with GRIST_UNTRUSTED_PORT=''
+    setDefaultEnv('GRIST_UNTRUSTED_PORT', '0');
+  }
+  const serverTypes = parseServerTypes(process.env.GRIST_SERVERS);
+
+  await fse.mkdirp(process.env.GRIST_DATA_DIR!);
+
+  if (serverTypes.includes("home")) {
+    console.log('Setting up database...');
+    await setupDb();
+    console.log('Database setup complete.');
+  }
 
   // Launch single-port, self-contained version of Grist.
-  const server = await mergedServerMain(G.port, ["home", "docs", "static"]);
+  const mergedServer = await MergedServer.create(G.port, serverTypes);
+  await mergedServer.run();
   if (process.env.GRIST_TESTING_SOCKET) {
-    await server.addTestingHooks();
+    await mergedServer.flexServer.addTestingHooks();
   }
   if (process.env.GRIST_SERVE_PLUGINS_PORT) {
-    await server.startCopy('pluginServer', parseInt(process.env.GRIST_SERVE_PLUGINS_PORT, 10));
+    await mergedServer.flexServer.startCopy('pluginServer', parseInt(process.env.GRIST_SERVE_PLUGINS_PORT, 10));
   }
-  return server;
+
+  return mergedServer.flexServer;
 }
 
 if (require.main === module) {

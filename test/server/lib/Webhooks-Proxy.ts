@@ -1,8 +1,8 @@
 import {UserAPIImpl} from 'app/common/UserAPI';
 import {WebhookSubscription} from 'app/server/lib/DocApi';
 import axios from 'axios';
-import * as bodyParser from 'body-parser';
 import {assert} from 'chai';
+import * as express from 'express';
 import {tmpdir} from 'os';
 import * as path from 'path';
 import {createClient} from 'redis';
@@ -14,17 +14,16 @@ import {signal} from 'test/server/lib/helpers/Signal';
 import {TestProxyServer} from 'test/server/lib/helpers/TestProxyServer';
 import {TestServer} from 'test/server/lib/helpers/TestServer';
 import * as testUtils from 'test/server/testUtils';
-import clone = require('lodash/clone');
 
 const chimpy = configForUser('Chimpy');
 
 
 // some doc ids
 const docIds: { [name: string]: string } = {
-  ApiDataRecordsTest: 'sample_7',
-  Timesheets: 'sample_13',
-  Bananas: 'sample_6',
-  Antartic: 'sample_11'
+  ApiDataRecordsTest: 'sampledocid_7',
+  Timesheets: 'sampledocid_13',
+  Bananas: 'sampledocid_6',
+  Antartic: 'sampledocid_11',
 };
 
 let dataDir: string;
@@ -39,12 +38,12 @@ async function cleanRedisDatabase() {
 }
 
 function backupEnvironmentVariables() {
-  let oldEnv: NodeJS.ProcessEnv;
+  let oldEnv: testUtils.EnvironmentSnapshot;
   before(() => {
-    oldEnv = clone(process.env);
+    oldEnv = new testUtils.EnvironmentSnapshot();
   });
   after(() => {
-    Object.assign(process.env, oldEnv);
+    oldEnv.restore();
   });
 }
 
@@ -218,7 +217,7 @@ describe('Webhooks-Proxy', function () {
         this.timeout(30000);
         serving = await serveSomething(app => {
 
-          app.use(bodyParser.json());
+          app.use(express.json());
           app.post('/200', ({body}, res) => {
             successCalled.emit(body[0].A);
             res.sendStatus(200);
@@ -307,7 +306,7 @@ describe('Webhooks-Proxy', function () {
         await notFoundCalled.waitAndReset();
 
         // But the working endpoint won't be called more then once.
-        assert.isFalse(successCalled.called());
+        successCalled.assertNotCalled();
 
         //Cleanup all
         await Promise.all(cleanup.map(fn => fn())).finally(() => cleanup.length = 0);

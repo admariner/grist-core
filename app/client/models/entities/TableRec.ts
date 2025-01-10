@@ -10,10 +10,12 @@ import randomcolor from 'randomcolor';
 // Represents a user-defined table.
 export interface TableRec extends IRowModel<"_grist_Tables"> {
   columns: ko.Computed<KoArray<ColumnRec>>;
+  visibleColumns: ko.Computed<ColumnRec[]>;
   validations: ko.Computed<KoArray<ValidationRec>>;
 
   primaryView: ko.Computed<ViewRec>;
   rawViewSection: ko.Computed<ViewSectionRec>;
+  recordCardViewSection: ko.Computed<ViewSectionRec>;
   summarySource: ko.Computed<TableRec>;
 
   // A Set object of colRefs for all summarySourceCols of table.
@@ -37,6 +39,7 @@ export interface TableRec extends IRowModel<"_grist_Tables"> {
   // If user can select this table in various places.
   // Note: Some hidden tables can still be visible on RawData view.
   isHidden: ko.Computed<boolean>;
+  isSummary: ko.Computed<boolean>;
 
   tableColor: string;
   disableAddRemoveRows: ko.Computed<boolean>;
@@ -45,10 +48,13 @@ export interface TableRec extends IRowModel<"_grist_Tables"> {
 
 export function createTableRec(this: TableRec, docModel: DocModel): void {
   this.columns = recordSet(this, docModel.columns, 'parentId', {sortBy: 'parentPos'});
+  this.visibleColumns = this.autoDispose(ko.pureComputed(() =>
+    this.columns().all().filter(c => !c.isHiddenCol())));
   this.validations = recordSet(this, docModel.validations, 'tableRef');
 
   this.primaryView = refRecord(docModel.views, this.primaryViewId);
   this.rawViewSection = refRecord(docModel.viewSections, this.rawViewSectionRef);
+  this.recordCardViewSection = refRecord(docModel.viewSections, this.recordCardViewSectionRef);
   this.summarySource = refRecord(docModel.tables, this.summarySourceTable);
   this.isHidden = this.autoDispose(
     // This is repeated logic from isHiddenTable.
@@ -62,6 +68,8 @@ export function createTableRec(this: TableRec, docModel: DocModel): void {
   // tableId for normal tables, or tableId of the source table for summary tables.
   this.primaryTableId = ko.pureComputed(() =>
     this.summarySourceTable() ? this.summarySource().tableId() : this.tableId());
+
+  this.isSummary = this.autoDispose(ko.pureComputed(() => Boolean(this.summarySourceTable())));
 
   this.groupByColumns = ko.pureComputed(() => this.columns().all().filter(c => c.summarySourceCol()));
 

@@ -7,6 +7,7 @@ import { $, gu, test } from 'test/nbrowser/gristUtil-nbrowser';
  */
 describe('FillLinkedRecords.ntest', function() {
   const cleanup = test.setupTestSuite(this);
+  const clipboard = gu.getLockableClipboard();
 
   gu.bigScreen();
 
@@ -27,19 +28,19 @@ describe('FillLinkedRecords.ntest', function() {
 
     // Link the sections first since the sample document start with no links.
     // Connect Friends -> Films
-    await gu.getSection('Films record').click();
+    await gu.actions.viewSection('Films record').selectSection();
     await $('.test-right-select-by').click();
     await $('.test-select-row:contains(Friends record)').click();
     await gu.waitForServer();
 
     // Connect Films -> Performances grid
-    await gu.getSection('Performances record').click();
+    await gu.actions.viewSection('Performances record').selectSection();
     await $('.test-right-select-by').click();
     await $('.test-select-row:contains(Films record)').click();
     await gu.waitForServer();
 
     // Connect Films -> Performances detail
-    await gu.getSection('Performances detail').click();
+    await gu.actions.viewSection('Performances detail').selectSection();
     await $('.test-right-select-by').click();
     await $('.test-select-row:contains(Films record)').click();
     await gu.waitForServer();
@@ -130,9 +131,12 @@ describe('FillLinkedRecords.ntest', function() {
 
     // Copy a range of three values, and paste them into the Add-New row.
     await gu.clickCell({col: 2, rowNum: 1});
-    await gu.sendKeys([$.SHIFT, $.DOWN, $.DOWN], $.COPY);
-    await gu.clickCell({col: 2, rowNum: 5});
-    await gu.sendKeys($.PASTE);
+    await gu.sendKeys([$.SHIFT, $.DOWN, $.DOWN]);
+    await clipboard.lockAndPerform(async (cb) => {
+      await cb.copy();
+      await gu.clickCell({col: 2, rowNum: 5});
+      await cb.paste();
+    });
     await gu.waitForServer();
 
     // Verify that three new rows now show up, with Film auto-filled.

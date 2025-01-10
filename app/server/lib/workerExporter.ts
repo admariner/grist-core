@@ -1,19 +1,19 @@
 import {PassThrough} from 'stream';
 import {FilterColValues} from "app/common/ActiveDocAPI";
-import {ActiveDocSource, doExportDoc, doExportSection, doExportTable, ExportData, Filter} from 'app/server/lib/Export';
+import {ActiveDocSource, doExportDoc, doExportSection, doExportTable,
+        ExportData, ExportHeader, ExportParameters, Filter} from 'app/server/lib/Export';
 import {createExcelFormatter} from 'app/server/lib/ExcelFormatter';
 import * as log from 'app/server/lib/log';
-import {Alignment, Border, stream as ExcelWriteStream, Fill} from 'exceljs';
+import {Alignment, Border, Buffer as ExcelBuffer, stream as ExcelWriteStream,
+        Fill, Workbook} from 'exceljs';
 import {Rpc} from 'grain-rpc';
 import {Stream} from 'stream';
 import {MessagePort, threadId} from 'worker_threads';
 
-export const makeXLSX = handleExport(doMakeXLSX);
-export const makeXLSXFromTable = handleExport(doMakeXLSXFromTable);
-export const makeXLSXFromViewSection = handleExport(doMakeXLSXFromViewSection);
+export const makeXLSXFromOptions = handleExport(doMakeXLSXFromOptions);
 
 function handleExport<T extends any[]>(
-  make: (a: ActiveDocSource, testDates: boolean, output: Stream, ...args: T) => Promise<void>
+  make: (a: ActiveDocSource, testDates: boolean, output: Stream, ...args: T) => Promise<void|ExcelBuffer>
 ) {
   return async function({port, testDates, args}: {port: MessagePort, testDates: boolean, args: T}) {
     try {
@@ -73,72 +73,115 @@ function bufferedPipe(stream: Stream, callback: (chunk: Buffer) => void, thresho
   stream.on('end', flush);
 }
 
+export async function doMakeXLSXFromOptions(
+  activeDocSource: ActiveDocSource,
+  testDates: boolean,
+  stream: Stream,
+  options: ExportParameters
+) {
+  const {tableId, viewSectionId, filters, sortOrder, linkingFilter, header} = options;
+  if (viewSectionId) {
+    return doMakeXLSXFromViewSection({activeDocSource, testDates, stream, viewSectionId, header,
+      sortOrder: sortOrder || null, filters: filters || null, linkingFilter: linkingFilter || null});
+  } else if (tableId) {
+    return doMakeXLSXFromTable({activeDocSource, testDates, stream, tableId, header});
+  } else {
+    return doMakeXLSX({activeDocSource, testDates, stream, header});
+  }
+}
+
 /**
+ * @async
  * Returns a XLSX stream of a view section that can be transformed or parsed.
  *
- * @param {Object} activeDoc - the activeDoc that the table being converted belongs to.
- * @param {Integer} viewSectionId - id of the viewsection to export.
- * @param {Integer[]} activeSortOrder (optional) - overriding sort order.
- * @param {Filter[]} filters (optional) - filters defined from ui.
+ * @param {Object} options - options for the export.
+ * @param {Object} options.activeDocSource - the activeDoc that the table being converted belongs to.
+ * @param {Integer} options.viewSectionId - id of the viewsection to export.
+ * @param {Integer[]} options.activeSortOrder (optional) - overriding sort order.
+ * @param {Filter[]} options.filters (optional) - filters defined from ui.
+ * @param {FilterColValues} options.linkingFilter (optional)
+ * @param {Stream} options.stream - the stream to write to.
+ * @param {boolean} options.testDates - whether to use static dates for testing.
+ * @param {string} options.header (optional) - which field of the column to use as header
  */
-async function doMakeXLSXFromViewSection(
+async function doMakeXLSXFromViewSection({
+  activeDocSource, testDates, stream, viewSectionId, sortOrder, filters, linkingFilter, header
+}: {
   activeDocSource: ActiveDocSource,
   testDates: boolean,
   stream: Stream,
   viewSectionId: number,
-  sortOrder: number[],
-  filters: Filter[],
-  linkingFilter: FilterColValues,
-) {
+  sortOrder: number[] | null,
+  filters: Filter[] | null,
+  linkingFilter: FilterColValues | null,
+  header?: ExportHeader,
+}) {
   const data = await doExportSection(activeDocSource, viewSectionId, sortOrder, filters, linkingFilter);
-  const {exportTable, end} = convertToExcel(stream, testDates);
+  const {exportTable, end} = convertToExcel(stream, testDates, {header});
   exportTable(data);
-  await end();
+  return end();
 }
 
 /**
+ * @async
  * Returns a XLSX stream of a table that can be transformed or parsed.
  *
- * @param {Object} activeDoc - the activeDoc that the table being converted belongs to.
- * @param {Integer} tableId - id of the table to export.
+ * @param {Object} options - options for the export.
+ * @param {Object} options.activeDocSource - the activeDoc that the table being converted belongs to.
+ * @param {Integer} options.tableId - id of the table to export.
+ * @param {Stream} options.stream - the stream to write to.
+ * @param {boolean} options.testDates - whether to use static dates for testing.
+ * @param {string} options.header (optional) - which field of the column to use as header
+ *
  */
-async function doMakeXLSXFromTable(
+async function doMakeXLSXFromTable({activeDocSource, testDates, stream, tableId, header}: {
   activeDocSource: ActiveDocSource,
   testDates: boolean,
   stream: Stream,
   tableId: string,
-) {
+  header?: ExportHeader,
+}) {
   const data = await doExportTable(activeDocSource, {tableId});
-  const {exportTable, end} = convertToExcel(stream, testDates);
+  const {exportTable, end} = convertToExcel(stream, testDates, {header});
   exportTable(data);
-  await end();
+  return end();
 }
 
 /**
  * Creates excel document with all tables from an active Grist document.
  */
-async function doMakeXLSX(
+async function doMakeXLSX({activeDocSource, testDates, stream, header}: {
   activeDocSource: ActiveDocSource,
   testDates: boolean,
   stream: Stream,
-): Promise<void> {
-  const {exportTable, end} = convertToExcel(stream, testDates);
+  header?: ExportHeader,
+}): Promise<void|ExcelBuffer> {
+  const {exportTable, end} = convertToExcel(stream, testDates, {header});
   await doExportDoc(activeDocSource, async (table: ExportData) => exportTable(table));
-  await end();
+  return end();
 }
 
 /**
  * Converts export data to an excel file.
+ * If a stream is provided, use it via the more memory-efficient
+ * WorkbookWriter, otherwise fall back on using a Workbook directly,
+ * and return a buffer.
+ * (The second option is for grist-static; at the time of writing
+ * WorkbookWriter doesn't appear to be available in a browser context).
  */
-function convertToExcel(stream: Stream, testDates: boolean): {
+function convertToExcel(stream: Stream|undefined, testDates: boolean, options: { header?: ExportHeader }): {
   exportTable: (table: ExportData) => void,
-  end: () => Promise<void>,
+  end: () => Promise<void|ExcelBuffer>,
 } {
   // Create workbook and add single sheet to it. Using the WorkbookWriter interface avoids
   // creating the entire Excel file in memory, which can be very memory-heavy. See
   // https://github.com/exceljs/exceljs#streaming-xlsx-writercontents. (The options useStyles and
   // useSharedStrings replicate more closely what was used previously.)
-  const wb = new ExcelWriteStream.xlsx.WorkbookWriter({useStyles: true, useSharedStrings: true, stream});
+  // If there is no stream, write with a Workbook.
+  const wb: Workbook | ExcelWriteStream.xlsx.WorkbookWriter = stream ?
+      new ExcelWriteStream.xlsx.WorkbookWriter({ useStyles: true, useSharedStrings: true, stream }) :
+      new Workbook();
+  const maybeCommit = stream ? (t: any) => t.commit() : (t: any) => {};
   if (testDates) {
     // HACK: for testing, we will keep static dates
     const date = new Date(Date.UTC(2018, 11, 1, 0, 0, 0));
@@ -180,7 +223,8 @@ function convertToExcel(stream: Stream, testDates: boolean): {
     const formatters = columns.map(col => createExcelFormatter(col.formatter.type, col.formatter.widgetOpts));
     // Generate headers for all columns with correct styles for whole column.
     // Actual header style for a first row will be overwritten later.
-    ws.columns = columns.map((col, c) => ({ header: col.label, style: formatters[c].style() }));
+    const colHeader = options.header ?? 'label';
+    ws.columns = columns.map((col, c) => ({ header: col[colHeader], style: formatters[c].style() }));
     // style up the header row
     for (let i = 1; i <= columns.length; i++) {
       // apply to all rows (including header)
@@ -201,11 +245,16 @@ function convertToExcel(stream: Stream, testDates: boolean): {
     });
     // Populate excel file with data
     for (const row of rowIds) {
-      ws.addRow(access.map((getter, c) => formatters[c].formatAny(getter(row)))).commit();
+      maybeCommit(ws.addRow(access.map((getter, c) => formatters[c].formatAny(getter(row)))));
     }
-    ws.commit();
+    maybeCommit(ws);
   }
-  function end() { return wb.commit(); }
+  async function end(): Promise<void|ExcelBuffer> {
+    if (!stream) {
+      return wb.xlsx.writeBuffer();
+    }
+    return maybeCommit(wb);
+  }
   return {exportTable, end};
 }
 
@@ -223,4 +272,15 @@ export function sanitizeWorksheetName(tableName: string): string {
     // Trim spaces and single quotes from the ends
     .replace(/^['\s]+/, '')
     .replace(/['\s]+$/, '');
+}
+
+// This method exists only to make Piscina happier. With it,
+// Piscina will load this file using a regular require(),
+// which under Electron will deal fine with Electron's ASAR
+// app bundle. Without it, Piscina will try fancier methods
+// that aren't at the time of writing correctly patched to
+// deal with an ASAR app bundle, and so report that this
+// file doesn't exist instead of exporting an XLSX file.
+//   https://github.com/gristlabs/grist-electron/issues/9
+export default function doNothing() {
 }

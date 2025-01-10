@@ -1,27 +1,15 @@
 import {safeJsonParse} from 'app/common/gutil';
+import * as chai from 'chai';
 import {assert, driver, Key} from 'mocha-webdriver';
+import {serveCustomViews, Serving, setAccess} from 'test/nbrowser/customUtil';
 import * as gu from 'test/nbrowser/gristUtils';
 import {server, setupTestSuite} from 'test/nbrowser/testUtils';
 
-import { serveCustomViews, Serving, setAccess } from 'test/nbrowser/customUtil';
-
-import * as chai from 'chai';
 chai.config.truncateThreshold = 5000;
-
-async function setCustomWidget() {
-  // if there is a select widget option
-  if (await driver.find('.test-config-widget-select').isPresent()) {
-    const selected = await driver.find('.test-config-widget-select .test-select-open').getText();
-    if (selected != "Custom URL") {
-      await driver.find('.test-config-widget-select .test-select-open').click();
-      await driver.findContent('.test-select-menu li', "Custom URL").click();
-      await gu.waitForServer();
-    }
-  }
-}
 
 describe('CustomView', function() {
   this.timeout(20000);
+  gu.bigScreen();
   const cleanup = setupTestSuite();
 
   let serving: Serving;
@@ -37,6 +25,33 @@ describe('CustomView', function() {
     if (serving) {
       await serving.shutdown();
     }
+  });
+
+  // This tests if test id works. Feels counterintuitive to "test the test" but grist-widget repository test suite
+  // depends on this.
+  it('informs about ready called', async () => {
+    // Add a custom widget to a new doc.
+    const session = await gu.session().teamSite.login();
+    await session.tempNewDoc(cleanup);
+    await gu.addNewSection('Custom', 'Table1');
+
+    // Point to a widget that doesn't immediately call ready.
+    await gu.setCustomWidgetUrl(`${serving.url}/deferred-ready`, {openGallery: false});
+    await gu.toggleSidePanel('right', 'open');
+
+    // We should have a single iframe.
+    assert.equal(await driver.findAll('iframe').then(f => f.length), 1);
+
+    // But without test ready class.
+    assert.isFalse(await driver.find("iframe.test-custom-widget-ready").isPresent());
+
+    // Now invoke ready.
+    await inFrame(async () => {
+      await driver.find('button').click();
+    });
+
+    // And we should have a test ready class.
+    assert.isTrue(await driver.findWait("iframe.test-custom-widget-ready", 100).isDisplayed());
   });
 
   for (const access of ['none', 'read table', 'full'] as const) {
@@ -79,10 +94,8 @@ describe('CustomView', function() {
 
         // Replace the widget with a custom widget that just reads out the data
         // as JSON.
-        await driver.find('.test-config-widget').click();
-        await setCustomWidget();
-        await driver.find('.test-config-widget-url').click();
-        await driver.sendKeys(`${serving.url}/readout`, Key.ENTER);
+        await gu.setCustomWidgetUrl(`${serving.url}/readout`, {openGallery: false});
+        await gu.openWidgetPanel();
         await setAccess(access);
         await gu.waitForServer();
 
@@ -138,10 +151,8 @@ describe('CustomView', function() {
         await gu.waitForServer();
 
         // Choose the custom view that just reads out data as json
-        await driver.find('.test-config-widget').click();
-        await setCustomWidget();
-        await driver.find('.test-config-widget-url').click();
-        await driver.sendKeys(`${serving.url}/readout`, Key.ENTER);
+        await gu.setCustomWidgetUrl(`${serving.url}/readout`, {openGallery: false});
+        await gu.openWidgetPanel();
         await setAccess(access);
         await gu.waitForServer();
 
@@ -208,36 +219,56 @@ describe('CustomView', function() {
         await gu.undo();
       });
 
+      const undoTestTitle = access === 'full'
+        ? 'allows undo/redo via keyboard'
+        : 'does not allow undo/redo via keyboard';
+      it (undoTestTitle, async function() {
+        const iframe = gu.getSection('Friends custom').find('iframe');
+        await driver.switchTo().frame(iframe);
+        await driver.find('body').click();
+
+        await gu.sendKeys(Key.chord(Key.CONTROL, 'y'));
+        const expected = access === 'full'
+          ? withAccess(['Rabbit', 'Tom', 'Sydney', 'Bill', 'Evan', 'Mary'], undefined)
+          : withAccess(['Roger', 'Tom', 'Sydney', 'Bill', 'Evan', 'Mary'], undefined);
+        await gu.waitToPass(async () => {
+          assert.deepEqual(readJson(await driver.find('#placeholder').getText())?.Name, expected);
+        }, 1000);
+
+        await gu.sendKeys(Key.chord(await gu.modKey(), 'z'));
+        await gu.waitToPass(async () => {
+          assert.deepEqual(readJson(await driver.find('#placeholder').getText())?.Name,
+          withAccess(['Roger', 'Tom', 'Sydney', 'Bill', 'Evan', 'Mary'], undefined));
+        }, 1000);
+
+        await driver.switchTo().defaultContent();
+      });
+
       it('allows switching to custom section by clicking inside it', async function() {
         await gu.getCell({section: 'FRIENDS', col: 0, rowNum: 1}).click();
         assert.equal(await gu.getActiveSectionTitle(), 'FRIENDS');
-        assert.equal(await driver.find('.test-config-widget-url').isPresent(), false);
+        assert.equal(await driver.find('.test-config-widget-open-custom-widget-gallery').isPresent(), false);
 
         const iframe = gu.getSection('Friends custom').find('iframe');
         await driver.switchTo().frame(iframe);
         await driver.find('body').click();
 
-        // Check that the right secton is active, and its settings visible in the side panel.
+        // Check that the right section is active, and its settings visible in the side panel.
         await driver.switchTo().defaultContent();
         assert.equal(await gu.getActiveSectionTitle(), 'FRIENDS Custom');
-        assert.equal(await driver.find('.test-config-widget-url').isPresent(), true);
+        assert.equal(await driver.find('.test-config-widget-open-custom-widget-gallery').isPresent(), true);
 
         // Switch back.
         await gu.getCell({section: 'FRIENDS', col: 0, rowNum: 1}).click();
         assert.equal(await gu.getActiveSectionTitle(), 'FRIENDS');
-        assert.equal(await driver.find('.test-config-widget-url').isPresent(), false);
+        assert.equal(await driver.find('.test-config-widget-open-custom-widget-gallery').isPresent(), false);
       });
 
       it('deals correctly with requests that require full access', async function() {
         // Choose a custom widget that tries to replace all cells in all user tables with 'zap'.
         await gu.getSection('Friends Custom').click();
-        await driver.find('.test-config-widget').click();
-        await setAccess("none");
-        await gu.waitForServer();
-
-        await gu.setValue(driver.find('.test-config-widget-url'), '');
-        await driver.find('.test-config-widget-url').click();
-        await driver.sendKeys(`${serving.url}/zap`, Key.ENTER);
+        await gu.setCustomWidgetUrl(`${serving.url}/zap`);
+        await gu.openWidgetPanel();
         await setAccess(access);
         await gu.waitForServer();
 
@@ -275,12 +306,10 @@ describe('CustomView', function() {
     // The test doc already has a Custom View widget. It just needs to
     // have a URL set.
     await gu.getSection('TYPES custom').click();
-    await driver.find('.test-config-widget').click();
-    await setCustomWidget();
+    await gu.setCustomWidgetUrl(`${serving.url}/types`);
     // If we needed to change widget to Custom URL, make sure access is read table.
     await setAccess("read table");
-    await driver.find('.test-config-widget-url').click();
-    await driver.sendKeys(`${serving.url}/types`, Key.ENTER);
+    await gu.waitForServer();
 
     const iframe = gu.getSection('TYPES custom').find('iframe');
     await driver.switchTo().frame(iframe);
@@ -426,10 +455,8 @@ describe('CustomView', function() {
     await gu.waitForServer();
 
     // Select a custom widget that tries to replace all cells in all user tables with 'zap'.
-    await driver.find('.test-config-widget').click();
-    await setCustomWidget();
-    await driver.find('.test-config-widget-url').click();
-    await driver.sendKeys(`${serving.url}/zap`, Key.ENTER);
+    await gu.setCustomWidgetUrl(`${serving.url}/zap`, {openGallery: false});
+    await gu.openWidgetPanel();
     await setAccess("full");
     await gu.waitForServer();
 
@@ -477,4 +504,132 @@ describe('CustomView', function() {
     const opinions = await api.getDocAPI(doc.id).getRows('Opinions');
     assert.equal(opinions['A'][0], 'do not zap plz');
   });
+
+  it('allows custom options for fetching data', async function () {
+    const mainSession = await gu.session().teamSite.login();
+    const doc = await mainSession.tempDoc(cleanup, 'FetchSelectedOptions.grist', {load: false});
+    await mainSession.loadDoc(`/doc/${doc.id}`);
+
+    await gu.getSection('TABLE1 Custom').click();
+    await gu.setCustomWidgetUrl(`${serving.url}/fetchSelectedOptions`);
+    await gu.openWidgetPanel();
+    await setAccess("full");
+    await gu.waitForServer();
+
+    const expected = {
+      "default": {
+        "fetchSelectedTable": {
+          "id": [1, 2],
+          "A": [["a", "b"], ["c", "d"]],
+        },
+        "fetchSelectedRecord": {
+          "id": 1,
+          "A": ["a", "b"]
+        },
+        // The viewApi methods don't decode data by default, hence the "L" prefixes.
+        "viewApiFetchSelectedTable": {
+          "id": [1, 2],
+          "A": [["L", "a", "b"], ["L", "c", "d"]],
+        },
+        "viewApiFetchSelectedRecord": {
+          "id": 2,
+          "A": ["L", "c", "d"]
+        },
+        // onRecords returns rows by default, not columns.
+        "onRecords": [
+          {"id": 1, "A": ["a", "b"]},
+          {"id": 2, "A": ["c", "d"]}
+        ],
+        "onRecord": {
+          "id": 1,
+          "A": ["a", "b"]
+        },
+      },
+      "options": {
+        // This is the result of calling the same methods as above,
+        // but with the values of `keepEncoded` and `format` being the opposite of their defaults.
+        // `includeColumns` is also set to either 'normal' or 'all' instead of the default 'shown',
+        // which means that the 'B' column is included in all the results,
+        // and the 'manualSort' columns is included in half of them.
+        "fetchSelectedTable": [
+          {"id": 1, "manualSort": 1, "A": ["L", "a", "b"], "B": 1},
+          {"id": 2, "manualSort": 2, "A": ["L", "c", "d"], "B": 2},
+        ],
+        "fetchSelectedRecord": {
+          "id": 1,
+          "A": ["L", "a", "b"],
+          "B": 1
+        },
+        "viewApiFetchSelectedTable": [
+          {"id": 1, "manualSort": 1, "A": ["a", "b"], "B": 1},
+          {"id": 2, "manualSort": 2, "A": ["c", "d"], "B": 2}
+        ],
+        "viewApiFetchSelectedRecord": {
+          "id": 2,
+          "A": ["c", "d"],
+          "B": 2
+        },
+        "onRecords": {
+          "id": [1, 2],
+          "manualSort": [1, 2],
+          "A": [["L", "a", "b"], ["L", "c", "d"]],
+          "B": [1, 2],
+        },
+        "onRecord": {
+          "id": 1,
+          "A": ["L", "a", "b"],
+          "B": 1
+        },
+      }
+    };
+
+    async function getData(shown: number) {
+      await driver.findContentWait('#data', `"shown": ${shown}`, 1000);
+      const data = await driver.find('#data').getText();
+      const result = JSON.parse(data);
+      assert.equal(result.shown, shown);
+      delete result.shown;
+      return result;
+    }
+
+    await inFrame(async () => {
+      await gu.waitToPass(async () => {
+        const parsed = await getData(12);
+        assert.deepEqual(parsed, expected);
+      }, 1000);
+    });
+
+    // Change the access level away from 'full'.
+    await setAccess("read table");
+    await gu.waitForServer();
+
+    await inFrame(async () => {
+      // onRecord(s) with custom includeColumns without full access will fail
+      // with an error that we can't catch and display,
+      // so only wait for 10 results instead of 12.
+      const parsed = await getData(10);
+
+      // The default options don't require full access, so the result is the same.
+      assert.deepEqual(parsed.default, expected.default);
+
+      // The alternative options all set includeColumns to 'normal' or 'all',
+      // which requires full access.
+      assert.deepEqual(parsed.options, {
+        "fetchSelectedTable":
+          "Error: Setting includeColumns to all requires full access. Current access level is read table",
+        "fetchSelectedRecord":
+          "Error: Setting includeColumns to normal requires full access. Current access level is read table",
+        "viewApiFetchSelectedTable":
+          "Error: Setting includeColumns to all requires full access. Current access level is read table",
+        "viewApiFetchSelectedRecord":
+          "Error: Setting includeColumns to normal requires full access. Current access level is read table"
+      });
+    });
+  });
 });
+
+async function inFrame(op: () => Promise<void>)  {
+  await driver.switchTo().frame(driver.find("iframe"));
+  await op();
+  await driver.switchTo().defaultContent();
+}

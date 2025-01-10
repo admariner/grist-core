@@ -2,7 +2,7 @@ import {GristDoc} from 'app/client/components/GristDoc';
 import {ViewSectionHelper} from 'app/client/components/ViewLayout';
 import {makeT} from 'app/client/lib/localization';
 import {reportMessage, reportSuccess} from 'app/client/models/errors';
-import {IEdit, IExternalTable, VirtualTable} from 'app/client/models/VirtualTable';
+import {IEdit, IExternalTable, VirtualTableRegistration} from 'app/client/models/VirtualTable';
 import {docListHeader} from 'app/client/ui/DocMenuCss';
 import {bigPrimaryButton} from 'app/client/ui2018/buttons';
 import {mediaSmall, testId} from 'app/client/ui2018/cssVars';
@@ -16,6 +16,7 @@ import {
   TableDataAction,
   UserAction
 } from 'app/common/DocActions';
+import {VirtualId} from 'app/common/SortSpec';
 import {WebhookSummary} from 'app/common/Triggers';
 import {DocAPI} from 'app/common/UserAPI';
 import {GristObjCode, RowRecord} from 'app/plugin/GristData';
@@ -28,30 +29,32 @@ import without = require('lodash/without');
 
 const t = makeT('WebhookPage');
 
+const TABLE_COLUMN_ROW_ID = VirtualId();
+
 /**
  * A list of columns for a virtual table about webhooks.
  * The ids need to be strings.
  */
 const WEBHOOK_COLUMNS = [
   {
-    id: 'vt_webhook_fc1',
+    id: TABLE_COLUMN_ROW_ID,
     colId: 'tableId',
     type: 'Choice',
-    label: 'Table',
+    label: t('Table'),
     // widgetOptions are configured later, since the choices depend
     // on the user tables in the document.
   },
   {
-    id: 'vt_webhook_fc2',
+    id: VirtualId(),
     colId: 'url',
     type: 'Text',
-    label: 'URL',
+    label: t('URL'),
   },
   {
-    id: 'vt_webhook_fc3',
+    id: VirtualId(),
     colId: 'eventTypes',
     type: 'ChoiceList',
-    label: 'Event Types',
+    label: t('Event Types'),
     widgetOptions: JSON.stringify({
       widget: 'TextBox',
       alignment: 'left',
@@ -60,43 +63,55 @@ const WEBHOOK_COLUMNS = [
     }),
   },
   {
-    id: 'vt_webhook_fc4',
+    id: VirtualId(),
+    colId: 'watchedColIdsText',
+    type: 'Text',
+    label: t('Filter for changes in these columns (semicolon-separated ids)'),
+  },
+  {
+    id: VirtualId(),
     colId: 'enabled',
     type: 'Bool',
-    label: 'Enabled',
+    label: t('Enabled'),
     widgetOptions: JSON.stringify({
       widget: 'Switch',
     }),
   },
   {
-    id: 'vt_webhook_fc5',
+    id: VirtualId(),
     colId: 'isReadyColumn',
     type: 'Text',
-    label: 'Ready Column',
+    label: t('Ready Column'),
   },
   {
-    id: 'vt_webhook_fc6',
+    id: VirtualId(),
     colId: 'webhookId',
     type: 'Text',
-    label: 'Webhook Id',
+    label: t('Webhook Id'),
   },
   {
-    id: 'vt_webhook_fc7',
+    id: VirtualId(),
     colId: 'name',
     type: 'Text',
-    label: 'Name',
+    label: t('Name'),
   },
   {
-    id: 'vt_webhook_fc8',
+    id: VirtualId(),
     colId: 'memo',
     type: 'Text',
-    label: 'Memo',
+    label: t('Memo'),
   },
   {
-    id: 'vt_webhook_fc9',
+    id: VirtualId(),
     colId: 'status',
     type: 'Text',
-    label: 'Status',
+    label: t('Status'),
+  },
+  {
+    id: VirtualId(),
+    colId: 'authorization',
+    type: 'Text',
+    label: t('Header Authorization'),
   },
 ] as const;
 
@@ -105,8 +120,9 @@ const WEBHOOK_COLUMNS = [
  */
 const WEBHOOK_VIEW_FIELDS: Array<(typeof WEBHOOK_COLUMNS)[number]['colId']> = [
   'name', 'memo',
-  'eventTypes', 'url',
-  'tableId', 'isReadyColumn',
+  'eventTypes', 'tableId',
+  'watchedColIdsText', 'isReadyColumn',
+  'url', 'authorization',
   'webhookId', 'enabled',
   'status'
 ];
@@ -127,9 +143,9 @@ class WebhookExternalTable implements IExternalTable {
   public name = 'GristHidden_WebhookTable';
   public initialActions = _prepareWebhookInitialActions(this.name);
   public saveableFields = [
-    'tableId', 'url', 'eventTypes', 'enabled', 'name', 'memo', 'isReadyColumn',
+    'tableId', 'watchedColIdsText', 'url', 'authorization', 'eventTypes', 'enabled', 'name', 'memo', 'isReadyColumn',
   ];
-  public webhooks: ObservableArray<WebhookSummary> =  observableArray<WebhookSummary>([]);
+  public webhooks: ObservableArray<UIWebhookSummary> = observableArray<UIWebhookSummary>([]);
 
   public constructor(private _docApi: DocAPI) {
   }
@@ -151,7 +167,7 @@ class WebhookExternalTable implements IExternalTable {
         }
         const colIds = new Set(getColIdsFromDocAction(d) || []);
         if (colIds.has('webhookId') || colIds.has('status')) {
-          throw new Error(`Sorry, not all fields can be edited.`);
+          throw new Error(t(`Sorry, not all fields can be edited.`));
         }
       }
     }
@@ -162,7 +178,7 @@ class WebhookExternalTable implements IExternalTable {
         continue;
       }
       await this._removeWebhook(rec);
-      reportMessage(`Removed webhook.`);
+      reportMessage(t(`Removed webhook.`));
     }
     const updates = new Set(delta.updateRows);
     const t2 = editor;
@@ -227,6 +243,7 @@ class WebhookExternalTable implements IExternalTable {
     for (const webhook of webhooks) {
       const values = _mapWebhookValues(webhook);
       const rowId = rowMap.get(webhook.id);
+
       if (rowId) {
         toRemove.delete(rowId);
         actions.push(
@@ -257,7 +274,7 @@ class WebhookExternalTable implements IExternalTable {
     // Grist doesn't have a good way to handle contingent choices.
     const choices = editor.gristDoc.docModel.visibleTables.all().map(tableRec => tableRec.tableId());
     editor.gristDoc.docData.receiveAction([
-      'UpdateRecord', '_grist_Tables_column', 'vt_webhook_fc1' as any, {
+      'UpdateRecord', '_grist_Tables_column', TABLE_COLUMN_ROW_ID as any, {
         widgetOptions: JSON.stringify({
           widget: 'TextBox',
           alignment: 'left',
@@ -269,7 +286,12 @@ class WebhookExternalTable implements IExternalTable {
   private _initalizeWebhookList(webhooks: WebhookSummary[]){
 
     this.webhooks.removeAll();
-    this.webhooks.push(...webhooks);
+    this.webhooks.push(
+      ...webhooks.map(webhook => {
+        const uiWebhook: UIWebhookSummary = {...webhook};
+        uiWebhook.fields.watchedColIdsText = webhook.fields.watchedColIds ? webhook.fields.watchedColIds.join(";") : "";
+        return uiWebhook;
+      }));
   }
 
   private _getErrorString(e: ApiError): string {
@@ -308,6 +330,9 @@ class WebhookExternalTable implements IExternalTable {
     if (fields.eventTypes) {
       fields.eventTypes = without(fields.eventTypes, 'L');
     }
+    fields.watchedColIds = fields.watchedColIdsText
+      ? fields.watchedColIdsText.split(";").filter((colId: string) => colId.trim() !== "")
+      : [];
     return fields;
   }
 }
@@ -319,7 +344,7 @@ class WebhookExternalTable implements IExternalTable {
 export class WebhookPage extends DisposableWithEvents {
 
   public docApi = this.gristDoc.docPageModel.appModel.api.getDocAPI(this.gristDoc.docId());
-  public sharedTable: VirtualTable;
+  public sharedTable: VirtualTableRegistration;
   private _webhookExternalTable: WebhookExternalTable;
 
 
@@ -327,10 +352,9 @@ export class WebhookPage extends DisposableWithEvents {
     super();
     //this._webhooks = observableArray<WebhookSummary>();
     this._webhookExternalTable = new WebhookExternalTable(this.docApi);
-    const table = new VirtualTable(this, gristDoc, this._webhookExternalTable);
+    const table = this.autoDispose(new VirtualTableRegistration(gristDoc, this._webhookExternalTable));
     this.listenTo(gristDoc, 'webhooks', async () => {
       await table.lazySync();
-
     });
   }
 
@@ -355,12 +379,12 @@ export class WebhookPage extends DisposableWithEvents {
 
   public async reset() {
     await this.docApi.flushWebhooks();
-    reportSuccess('Cleared webhook queue.');
+    reportSuccess(t('Cleared webhook queue.'));
   }
 
   public async resetSelected(id: string) {
     await this.docApi.flushWebhook(id);
-    reportSuccess(`Cleared webhook ${id} queue.`);
+    reportSuccess(t(`Cleared webhook ${id} queue.`));
   }
 }
 
@@ -440,16 +464,21 @@ function _prepareWebhookInitialActions(tableId: string): DocAction[] {
 /**
  * Map a webhook summary to a webhook table raw record.  The main
  * difference is that `eventTypes` is tweaked to be in a cell format,
- * and `status` is converted to a string.
+ * `status` is converted to a string,
+ * and `watchedColIdsText` is converted to list in a cell format.
  */
-function _mapWebhookValues(webhookSummary: WebhookSummary): Partial<WebhookSchemaType> {
+function _mapWebhookValues(webhookSummary: UIWebhookSummary): Partial<WebhookSchemaType> {
   const fields = webhookSummary.fields;
-  const {eventTypes} = fields;
+  const {eventTypes, watchedColIdsText} = fields;
+  const watchedColIds = watchedColIdsText
+    ? watchedColIdsText.split(";").filter(colId => colId.trim() !== "")
+    : [];
   return {
     ...fields,
     webhookId: webhookSummary.id,
     status: JSON.stringify(webhookSummary.usage),
     eventTypes: [GristObjCode.List, ...eventTypes],
+    watchedColIds: [GristObjCode.List, ...watchedColIds],
   };
 }
 
@@ -457,6 +486,11 @@ type WebhookSchemaType = {
   [prop in keyof WebhookSummary['fields']]: WebhookSummary['fields'][prop]
 } & {
   eventTypes: [GristObjCode, ...unknown[]];
+  watchedColIds: [GristObjCode, ...unknown[]];
   status: string;
   webhookId: string;
+}
+
+type UIWebhookSummary = WebhookSummary & {
+  fields: {watchedColIdsText?: string;}
 }

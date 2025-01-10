@@ -1,18 +1,28 @@
-import {Features, getPageTitleSuffix, GristLoadConfig, IFeature} from 'app/common/gristUrls';
+import {
+  Features,
+  getContactSupportUrl,
+  getFreeCoachingCallUrl,
+  getHelpCenterUrl,
+  getPageTitleSuffix,
+  getTermsOfServiceUrl,
+  GristLoadConfig,
+  IFeature
+} from 'app/common/gristUrls';
 import {isAffirmative} from 'app/common/gutil';
 import {getTagManagerSnippet} from 'app/common/tagManager';
 import {Document} from 'app/common/UserAPI';
-import {SUPPORT_EMAIL} from 'app/gen-server/lib/HomeDBManager';
+import {AttachedCustomWidgets, IAttachedCustomWidget} from "app/common/widgetTypes";
+import {SUPPORT_EMAIL} from 'app/gen-server/lib/homedb/HomeDBManager';
 import {isAnonymousUser, isSingleUserMode, RequestWithLogin} from 'app/server/lib/Authorizer';
 import {RequestWithOrg} from 'app/server/lib/extractOrg';
 import {GristServer} from 'app/server/lib/GristServer';
-import {getTemplateOrg} from 'app/server/lib/gristSettings';
+import {getOnboardingTutorialDocId, getTemplateOrg} from 'app/server/lib/gristSettings';
 import {getSupportedEngineChoices} from 'app/server/lib/serverUtils';
 import {readLoadedLngs, readLoadedNamespaces} from 'app/server/localization';
 import * as express from 'express';
 import * as fse from 'fs-extra';
-import jsesc from 'jsesc';
 import * as handlebars from 'handlebars';
+import jsesc from 'jsesc';
 import * as path from 'path';
 import difference = require('lodash/difference');
 
@@ -32,7 +42,7 @@ export interface ISendAppPageOptions {
   googleTagManager?: true | false | 'anon';
 }
 
-export interface MakeGristConfigOptons {
+export interface MakeGristConfigOptions {
   homeUrl: string|null;
   extra: Partial<GristLoadConfig>;
   baseDomain?: string;
@@ -40,7 +50,7 @@ export interface MakeGristConfigOptons {
   server?: GristServer|null;
 }
 
-export function makeGristConfig(options: MakeGristConfigOptons): GristLoadConfig {
+export function makeGristConfig(options: MakeGristConfigOptions): GristLoadConfig {
   const {homeUrl, extra, baseDomain, req, server} = options;
   // .invalid is a TLD the IETF promises will never exist.
   const pluginUrl = process.env.APP_UNTRUSTED_URL || 'http://plugins.invalid';
@@ -52,9 +62,13 @@ export function makeGristConfig(options: MakeGristConfigOptons): GristLoadConfig
     org: process.env.GRIST_SINGLE_ORG || (mreq && mreq.org),
     baseDomain,
     singleOrg: process.env.GRIST_SINGLE_ORG,
-    helpCenterUrl: process.env.GRIST_HELP_CENTER || "https://support.getgrist.com",
+    helpCenterUrl: getHelpCenterUrl(),
+    termsOfServiceUrl: getTermsOfServiceUrl(),
+    freeCoachingCallUrl: getFreeCoachingCallUrl(),
+    contactSupportUrl: getContactSupportUrl(),
     pathOnly,
     supportAnon: shouldSupportAnon(),
+    enableAnonPlayground: isAffirmative(process.env.GRIST_ANON_PLAYGROUND ?? true),
     supportEngines: getSupportedEngineChoices(),
     features: getFeatures(),
     pageTitleSuffix: configuredPageTitleSuffix(),
@@ -66,21 +80,30 @@ export function makeGristConfig(options: MakeGristConfigOptons): GristLoadConfig
     maxUploadSizeImport: (Number(process.env.GRIST_MAX_UPLOAD_IMPORT_MB) * 1024 * 1024) || undefined,
     maxUploadSizeAttachment: (Number(process.env.GRIST_MAX_UPLOAD_ATTACHMENT_MB) * 1024 * 1024) || undefined,
     timestampMs: Date.now(),
-    enableWidgetRepository: Boolean(process.env.GRIST_WIDGET_LIST_URL),
+    enableWidgetRepository: Boolean(process.env.GRIST_WIDGET_LIST_URL) ||
+        ((server?.getBundledWidgets().length || 0) > 0),
     survey: Boolean(process.env.DOC_ID_NEW_USER_INFO),
     tagManagerId: process.env.GOOGLE_TAG_MANAGER_ID,
-    activation: getActivation(req as RequestWithLogin | undefined),
+    activation: (req as RequestWithLogin|undefined)?.activation,
     enableCustomCss: isAffirmative(process.env.APP_STATIC_INCLUDE_CUSTOM_CSS),
     supportedLngs: readLoadedLngs(req?.i18n),
     namespaces: readLoadedNamespaces(req?.i18n),
     featureComments: isAffirmative(process.env.COMMENTS),
-    featureFormulaAssistant: Boolean(process.env.OPENAI_API_KEY || process.env.ASSISTANT_CHAT_COMPLETION_ENDPOINT),
+    featureFormulaAssistant: Boolean(process.env.OPENAI_API_KEY ||
+      process.env.ASSISTANT_API_KEY  ||
+      process.env.ASSISTANT_CHAT_COMPLETION_ENDPOINT),
     assistantService: process.env.OPENAI_API_KEY ? 'OpenAI' : undefined,
+    permittedCustomWidgets: getPermittedCustomWidgets(server),
     supportEmail: SUPPORT_EMAIL,
     userLocale: (req as RequestWithLogin | undefined)?.user?.options?.locale,
-    telemetry: server?.getTelemetry().getTelemetryConfig(),
+    telemetry: server?.getTelemetry().getTelemetryConfig(req as RequestWithLogin | undefined),
     deploymentType: server?.getDeploymentType(),
+    forceEnableEnterprise: isAffirmative(process.env.GRIST_FORCE_ENABLE_ENTERPRISE),
     templateOrg: getTemplateOrg(),
+    onboardingTutorialDocId: getOnboardingTutorialDocId(),
+    canCloseAccount: isAffirmative(process.env.GRIST_ACCOUNT_CLOSE),
+    experimentalPlugins: isAffirmative(process.env.GRIST_EXPERIMENTAL_PLUGINS),
+    notifierEnabled: server?.hasNotifier(),
     ...extra,
   };
 }
@@ -101,23 +124,30 @@ export function makeMessagePage(staticDir: string) {
   };
 }
 
+export type SendAppPageFunction =
+  (req: express.Request, resp: express.Response, options: ISendAppPageOptions) => Promise<void>;
+
 /**
  * Send a simple template page, read from file at pagePath (relative to static/), with certain
  * placeholders replaced.
  */
-export function makeSendAppPage(opts: {
-  server: GristServer, staticDir: string, tag: string, testLogin?: boolean,
-  baseDomain?: string
-}) {
-  const {server, staticDir, tag, testLogin} = opts;
+export function makeSendAppPage({ server, staticDir, tag, testLogin, baseDomain }: {
+  server: GristServer, staticDir: string, tag: string, testLogin?: boolean, baseDomain?: string
+}): SendAppPageFunction {
+
+  // If env var GRIST_INCLUDE_CUSTOM_SCRIPT_URL is set, load it in a <script> tag on all app pages.
+  const customScriptUrl = process.env.GRIST_INCLUDE_CUSTOM_SCRIPT_URL;
+  const insertCustomScript: string = customScriptUrl ?
+    `<script src="${customScriptUrl}" crossorigin="anonymous"></script>` : '';
+
   return async (req: express.Request, resp: express.Response, options: ISendAppPageOptions) => {
-      const config = makeGristConfig({
-        homeUrl: !isSingleUserMode() ? server.getHomeUrl(req) : null,
-        extra: options.config,
-        baseDomain: opts.baseDomain,
-        req,
-        server,
-      });
+    const config = makeGristConfig({
+      homeUrl: !isSingleUserMode() ? server.getHomeUrl(req) : null,
+      extra: options.config,
+      baseDomain,
+      req,
+      server,
+    });
 
     // We could cache file contents in memory, but the filesystem does caching too, and compared
     // to that, the performance gain is unlikely to be meaningful. So keep it simple here.
@@ -126,8 +156,11 @@ export function makeSendAppPage(opts: {
     const needTagManager = (options.googleTagManager === 'anon' && isAnonymousUser(req)) ||
       options.googleTagManager === true;
     const tagManagerSnippet = needTagManager ? getTagManagerSnippet(process.env.GOOGLE_TAG_MANAGER_ID) : '';
-    const staticOrigin = process.env.APP_STATIC_URL || "";
-    const staticBaseUrl = `${staticOrigin}/v/${options.tag || tag}/`;
+    const staticTag = options.tag || tag;
+    // If boot tag is used, serve assets locally, otherwise respect
+    // APP_STATIC_URL.
+    const staticOrigin = staticTag === 'boot' ? '' : (process.env.APP_STATIC_URL || '');
+    const staticBaseUrl = `${staticOrigin}/v/${staticTag}/`;
     const customHeadHtmlSnippet = server.create.getExtraHeadHtml?.() ?? "";
     const warning = testLogin ? "<div class=\"dev_warning\">Authentication is not enforced</div>" : "";
     // Preload all languages that will be used or are requested by client.
@@ -147,12 +180,49 @@ export function makeSendAppPage(opts: {
       .replace("<!-- INSERT BASE -->", `<base href="${staticBaseUrl}">` + tagManagerSnippet)
       .replace("<!-- INSERT LOCALE -->", preloads)
       .replace("<!-- INSERT CUSTOM -->", customHeadHtmlSnippet)
+      .replace("<!-- INSERT CUSTOM SCRIPT -->", insertCustomScript)
       .replace(
         "<!-- INSERT CONFIG -->",
         `<script>window.gristConfig = ${jsesc(config, {isScriptContext: true, json: true})};</script>`
       );
+    logVisitedPageTelemetryEvent(req as RequestWithLogin, {
+      server,
+      pagePath: options.path,
+      docId: config.assignmentId,
+    });
     resp.status(options.status).type('html').send(content);
   };
+}
+
+interface LogVisitedPageEventOptions {
+  server: GristServer;
+  pagePath: string;
+  docId?: string;
+}
+
+function logVisitedPageTelemetryEvent(req: RequestWithLogin, options: LogVisitedPageEventOptions) {
+  const {server, pagePath, docId} = options;
+
+  // Construct a fake URL and append the utm_* parameters from the original URL.
+  // We avoid using the original URL here because it may contain sensitive identifiers,
+  // such as link key parameters and site/doc ids.
+  const url = new URL('fake', server.getMergedOrgUrl(req));
+  for (const [key, value] of Object.entries(req.query)) {
+    if (key.startsWith('utm_')) {
+      url.searchParams.set(key, String(value));
+    }
+  }
+
+  server.getTelemetry().logEvent(req, 'visitedPage', {
+    full: {
+      docIdDigest: docId,
+      url: url.toString(),
+      path: pagePath,
+      userAgent: req.headers['user-agent'],
+      userId: req.userId,
+      altSessionId: req.altSessionId,
+    },
+  });
 }
 
 function shouldSupportAnon() {
@@ -164,6 +234,28 @@ function getFeatures(): IFeature[] {
   const disabledFeatures = process.env.GRIST_HIDE_UI_ELEMENTS?.split(',') ?? [];
   const enabledFeatures = process.env.GRIST_UI_FEATURES?.split(',') ?? Features.values;
   return Features.checkAll(difference(enabledFeatures, disabledFeatures));
+}
+
+function getPermittedCustomWidgets(gristServer?: GristServer|null): IAttachedCustomWidget[] {
+  if (!process.env.PERMITTED_CUSTOM_WIDGETS && gristServer) {
+    // The PERMITTED_CUSTOM_WIDGETS environment variable is a bit of
+    // a drag. If there are bundled widgets that overlap with widgets
+    // described in the codebase, let's just assume they are permitted.
+    const widgets = gristServer.getBundledWidgets();
+    const names = new Set(AttachedCustomWidgets.values as string[]);
+    const namesFound: IAttachedCustomWidget[] = [];
+    for (const widget of widgets) {
+      // Permitted custom widgets are identified so many ways across the
+      // code! Why? TODO: cut down on identifiers.
+      const name = widget.widgetId.replace('@gristlabs/widget-', 'custom.');
+      if (names.has(name)) {
+        namesFound.push(name as IAttachedCustomWidget);
+      }
+    }
+    return AttachedCustomWidgets.checkAll(namesFound);
+  }
+  const widgetsList = process.env.PERMITTED_CUSTOM_WIDGETS?.split(',').map(widgetName=>`custom.${widgetName}`) ?? [];
+  return AttachedCustomWidgets.checkAll(widgetsList);
 }
 
 function configuredPageTitleSuffix() {
@@ -221,12 +313,4 @@ function getDocFromConfig(config: GristLoadConfig): Document | null {
   if (!config.getDoc || !config.assignmentId) { return null; }
 
   return config.getDoc[config.assignmentId] ?? null;
-}
-
-function getActivation(mreq: RequestWithLogin|undefined) {
-  const defaultEmail = process.env.GRIST_DEFAULT_EMAIL;
-  return {
-    ...mreq?.activation,
-    isManager: Boolean(defaultEmail && defaultEmail === mreq?.user?.loginEmail),
-  };
 }

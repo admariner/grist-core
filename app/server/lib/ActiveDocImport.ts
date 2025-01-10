@@ -10,6 +10,7 @@ import {ApplyUAResult, DataSourceTransformed, ImportOptions, ImportResult, Impor
         TransformRuleMap} from 'app/common/ActiveDocAPI';
 import {ApiError} from 'app/common/ApiError';
 import {BulkColValues, CellValue, fromTableDataAction, UserAction} from 'app/common/DocActions';
+import {isBlankValue} from 'app/common/gristTypes';
 import * as gutil from 'app/common/gutil';
 import {localTimestampToUTC} from 'app/common/RelativeDates';
 import {DocStateComparison} from 'app/common/UserAPI';
@@ -345,8 +346,17 @@ export class ActiveDocImport {
       if (file.ext) {
         origName = path.basename(origName, path.extname(origName)) + file.ext;
       }
+      const fileParseOptions = {...parseOptions};
+      if (file.ext === '.dsv') {
+        if (!fileParseOptions.delimiter) {
+          fileParseOptions.delimiter = '💩';
+        }
+        if (!fileParseOptions.encoding) {
+          fileParseOptions.encoding = 'utf-8';
+        }
+      }
       const res = await this._importFileAsNewTable(docSession, file.absPath, {
-        parseOptions,
+        parseOptions: fileParseOptions,
         mergeOptionsMap: mergeOptionMaps[index] || {},
         isHidden,
         originalFilename: origName,
@@ -372,7 +382,7 @@ export class ActiveDocImport {
    * @param {String} tmpPath: The path from of the original file.
    * @param {FileImportOptions} importOptions: File import options.
    * @returns {Promise<ImportResult>} with `options` property containing parseOptions as serialized JSON as adjusted
-   * or guessed by the plugin, and `tables`, which is which is a list of objects with information about
+   * or guessed by the plugin, and `tables`, which is a list of objects with information about
    * tables, such as `hiddenTableId`, `uploadFileIndex`, `origTableName`, `transformSectionRef`, `destTableId`.
    */
   private async _importFileAsNewTable(docSession: OptDocSession, tmpPath: string,
@@ -430,6 +440,7 @@ export class ActiveDocImport {
     const columnData: BulkColValues = {};
 
     const srcCols = await this._activeDoc.getTableCols(docSession, hiddenTableId);
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
     const srcColIds = srcCols.map(c => c.id as string);
 
     // Only include destination columns that weren't skipped.
@@ -657,12 +668,6 @@ export class ActiveDocImport {
   }
 }
 
-// Helper function that returns true if a given cell is blank (i.e. null or empty).
-function isBlank(value: CellValue): boolean {
-  return value === null || (typeof value === 'string' && value.trim().length === 0);
-}
-
-
 // Helper function that returns new `colIds` with import prefixes stripped.
 function stripPrefixes(colIds: string[]): string[] {
   return colIds.map(id => id.startsWith(IMPORT_TRANSFORM_COLUMN_PREFIX) ?
@@ -681,13 +686,13 @@ type MergeFunction = (srcVal: CellValue, destVal: CellValue) => CellValue;
 function getMergeFunction({type}: MergeStrategy): MergeFunction {
   switch (type) {
     case 'replace-with-nonblank-source': {
-      return (srcVal, destVal) => isBlank(srcVal) ? destVal : srcVal;
+      return (srcVal, destVal) => isBlankValue(srcVal) ? destVal : srcVal;
     }
     case 'replace-all-fields': {
       return (srcVal, _destVal) => srcVal;
     }
     case 'replace-blank-fields-only': {
-      return (srcVal, destVal) => isBlank(destVal) ? srcVal : destVal;
+      return (srcVal, destVal) => isBlankValue(destVal) ? srcVal : destVal;
     }
     default: {
       // Normally, we should never arrive here. If we somehow do, throw an error.

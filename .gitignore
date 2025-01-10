@@ -12,6 +12,11 @@
 /sandbox_venv*
 /.vscode/
 
+# Files created by grist-desktop setup
+/cpython.tar.gz
+/python
+/static_ext
+
 # Build helper files.
 /.build*
 
@@ -77,5 +82,18 @@ jspm_packages/
 # Test
 timings.txt
 xunit.xml
+.clipboard.lock
 
 **/_build
+
+# ext directory can be overwritten
+/ext
+/ext/**
+
+# Docker compose examples - persistent values and secrets
+/docker-compose-examples/*/persist
+/docker-compose-examples/*/secrets
+/docker-compose-examples/grist-traefik-oidc-auth/.env
+
+# Sample grist documents
+/samples/

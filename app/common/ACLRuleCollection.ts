@@ -1,14 +1,17 @@
 import {parsePermissions, permissionSetToText, splitSchemaEditPermissionSet} from 'app/common/ACLPermissions';
+import {AVAILABLE_BITS_COLUMNS, AVAILABLE_BITS_TABLES, trimPermissions} from 'app/common/ACLPermissions';
+import {ACLRulesReader} from 'app/common/ACLRulesReader';
 import {AclRuleProblem} from 'app/common/ActiveDocAPI';
-import {ILogger} from 'app/common/BaseAPI';
 import {DocData} from 'app/common/DocData';
-import {AclMatchFunc, ParsedAclFormula, RulePart, RuleSet, UserAttributeRule} from 'app/common/GranularAccessClause';
+import {RulePart, RuleSet, UserAttributeRule} from 'app/common/GranularAccessClause';
 import {getSetMapValue, isNonNullish} from 'app/common/gutil';
+import {CompiledPredicateFormula, ParsedPredicateFormula} from 'app/common/PredicateFormula';
 import {MetaRowRecord} from 'app/common/TableData';
 import {decodeObject} from 'app/plugin/objtypes';
-import sortBy = require('lodash/sortBy');
 
-const defaultMatchFunc: AclMatchFunc = () => true;
+export type ILogger = Pick<Console, 'log'|'debug'|'info'|'warn'|'error'>;
+
+const defaultMatchFunc: CompiledPredicateFormula = () => true;
 
 export const SPECIAL_RULES_TABLE_ID = '*SPECIAL';
 
@@ -18,12 +21,12 @@ const DEFAULT_RULE_SET: RuleSet = {
   colIds: '*',
   body: [{
     aclFormula: "user.Access in [EDITOR, OWNER]",
-    matchFunc:  (input) => ['editors', 'owners'].includes(String(input.user.Access)),
+    matchFunc: (input) => ['editors', 'owners'].includes(String(input.user!.Access)),
     permissions: parsePermissions('all'),
     permissionsText: 'all',
   }, {
     aclFormula: "user.Access in [VIEWER]",
-    matchFunc:  (input) => ['viewers'].includes(String(input.user.Access)),
+    matchFunc: (input) => ['viewers'].includes(String(input.user!.Access)),
     permissions: parsePermissions('+R-CUDS'),
     permissionsText: '+R',
   }, {
@@ -46,7 +49,7 @@ const SPECIAL_RULE_SETS: Record<string, RuleSet> = {
     colIds: ['SchemaEdit'],
     body: [{
       aclFormula: "user.Access in [EDITOR, OWNER]",
-      matchFunc:  (input) => ['editors', 'owners'].includes(String(input.user.Access)),
+      matchFunc: (input) => ['editors', 'owners'].includes(String(input.user!.Access)),
       permissions: parsePermissions('+S'),
       permissionsText: '+S',
     }, {
@@ -61,7 +64,7 @@ const SPECIAL_RULE_SETS: Record<string, RuleSet> = {
     colIds: ['AccessRules'],
     body: [{
       aclFormula: "user.Access in [OWNER]",
-      matchFunc:  (input) => ['owners'].includes(String(input.user.Access)),
+      matchFunc: (input) => ['owners'].includes(String(input.user!.Access)),
       permissions: parsePermissions('+R'),
       permissionsText: '+R',
     }, {
@@ -76,7 +79,7 @@ const SPECIAL_RULE_SETS: Record<string, RuleSet> = {
     colIds: ['FullCopies'],
     body: [{
       aclFormula: "user.Access in [OWNER]",
-      matchFunc:  (input) => ['owners'].includes(String(input.user.Access)),
+      matchFunc: (input) => ['owners'].includes(String(input.user!.Access)),
       permissions: parsePermissions('+R'),
       permissionsText: '+R',
     }, {
@@ -100,7 +103,7 @@ const EMERGENCY_RULE_SET: RuleSet = {
   colIds: '*',
   body: [{
     aclFormula: "user.Access in [OWNER]",
-    matchFunc:  (input) => ['owners'].includes(String(input.user.Access)),
+    matchFunc:  (input) => ['owners'].includes(String(input.user!.Access)),
     permissions: parsePermissions('all'),
     permissionsText: 'all',
   }, {
@@ -346,7 +349,9 @@ export class ACLRuleCollection {
     const names: string[] = [];
     for (const rule of this.getUserAttributeRules().values()) {
       const tableRef = tablesTable.findRow('tableId', rule.tableId);
-      const colRef = columnsTable.findMatchingRowId({parentId: tableRef, colId: rule.lookupColId});
+      const colRef = columnsTable.findMatchingRowId({
+        parentId: tableRef, colId: rule.lookupColId,
+      });
       if (!colRef) {
         invalidUAColumns.push(`${rule.tableId}.${rule.lookupColId}`);
         names.push(rule.name);
@@ -377,12 +382,14 @@ export class ACLRuleCollection {
 
 export interface ReadAclOptions {
   log: ILogger;     // For logging warnings during rule processing.
-  compile?: (parsed: ParsedAclFormula) => AclMatchFunc;
-  // If true, call addHelperCols to add helper columns of restricted columns to rule sets.
-  // Used in the server for extra filtering, but not in the client, because:
-  // 1. They would show in the UI
-  // 2. They would be saved back after editing, causing them to accumulate
-  includeHelperCols?: boolean;
+  compile?: (parsed: ParsedPredicateFormula) => CompiledPredicateFormula;
+  // If true, add and modify access rules in some special ways.
+  // Specifically, call addHelperCols to add helper columns of restricted columns to rule sets,
+  // and use ACLShareRules to implement any special shares as access rules.
+  // Used in the server, but not in the client, because of at least the following:
+  // 1. Rules would show in the UI
+  // 2. Rules would be saved back after editing, causing them to accumulate
+  enrichRulesForImplementation?: boolean;
 
   // If true, rules with 'schemaEdit' permission are moved out of the '*:*' resource into a
   // fictitious '*SPECIAL:SchemaEdit' resource. This is used only on the client, to present
@@ -454,24 +461,19 @@ function getHelperCols(docData: DocData, tableId: string, colIds: string[], log:
  * Parse all ACL rules in the document from DocData into a list of RuleSets and of
  * UserAttributeRules. This is used by both client-side code and server-side.
  */
-function readAclRules(docData: DocData, {log, compile, includeHelperCols}: ReadAclOptions): ReadAclResults {
-  const resourcesTable = docData.getMetaTable('_grist_ACLResources');
-  const rulesTable = docData.getMetaTable('_grist_ACLRules');
-
+function readAclRules(docData: DocData, {log, compile, enrichRulesForImplementation}: ReadAclOptions): ReadAclResults {
   const ruleSets: RuleSet[] = [];
   const userAttributes: UserAttributeRule[] = [];
 
-  // Group rules by resource first, ordering by rulePos. Each group will become a RuleSet.
-  const rulesByResource = new Map<number, Array<MetaRowRecord<'_grist_ACLRules'>>>();
-  for (const ruleRecord of sortBy(rulesTable.getRecords(), 'rulePos')) {
-    getSetMapValue(rulesByResource, ruleRecord.resource, () => []).push(ruleRecord);
-  }
+  const aclRulesReader = new ACLRulesReader(docData, {
+    addShareRules: enrichRulesForImplementation,
+  });
 
-  for (const [resourceId, rules] of rulesByResource.entries()) {
-    const resourceRec = resourcesTable.getRecord(resourceId);
+  // Group rules by resource first, ordering by rulePos. Each group will become a RuleSet.
+  for (const [resourceId, rules] of aclRulesReader.entries()) {
+    const resourceRec = aclRulesReader.getResourceById(resourceId);
     if (!resourceRec) {
       throw new Error(`ACLRule ${rules[0].id} refers to an invalid ACLResource ${resourceId}`);
-      continue;
     }
     if (!resourceRec.tableId || !resourceRec.colIds) {
       // This should only be the case for the old-style default rule/resource, which we
@@ -481,7 +483,7 @@ function readAclRules(docData: DocData, {log, compile, includeHelperCols}: ReadA
     const tableId = resourceRec.tableId;
     const colIds = resourceRec.colIds === '*' ? '*' : resourceRec.colIds.split(',');
 
-    if (includeHelperCols && Array.isArray(colIds)) {
+    if (enrichRulesForImplementation && Array.isArray(colIds)) {
       colIds.push(...getHelperCols(docData, tableId, colIds, log));
     }
 
@@ -506,13 +508,18 @@ function readAclRules(docData: DocData, {log, compile, includeHelperCols}: ReadA
         throw new Error(`ACLRule ${rule.id} invalid because missing its parsed formula`);
       } else {
         const aclFormulaParsed = rule.aclFormula && JSON.parse(String(rule.aclFormulaParsed));
+        let permissions = parsePermissions(String(rule.permissionsText));
+        if (tableId !== '*' && tableId !== SPECIAL_RULES_TABLE_ID) {
+          const availableBits = (colIds === '*') ? AVAILABLE_BITS_TABLES : AVAILABLE_BITS_COLUMNS;
+          permissions = trimPermissions(permissions, availableBits);
+        }
         body.push({
           origRecord: rule,
           aclFormula: String(rule.aclFormula),
           matchFunc: rule.aclFormula ? compile?.(aclFormulaParsed) : defaultMatchFunc,
           memo: rule.memo,
-          permissions: parsePermissions(String(rule.permissionsText)),
-          permissionsText: String(rule.permissionsText),
+          permissions,
+          permissionsText: permissionSetToText(permissions)
         });
       }
     }

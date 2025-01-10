@@ -6,11 +6,8 @@
  *  https://css-tricks.com/snippets/css/system-font-stack/
  *
  */
-import {createPausableObs, PausableObservable} from 'app/client/lib/pausableObs';
-import {getStorage} from 'app/client/lib/storage';
 import {urlState} from 'app/client/models/gristUrlState';
 import {getTheme, ProductFlavor} from 'app/client/ui/CustomThemes';
-import {Theme, ThemeAppearance} from 'app/common/ThemePrefs';
 import {dom, DomElementMethod, makeTestId, Observable, styled, TestId} from 'grainjs';
 import debounce = require('lodash/debounce');
 import values = require('lodash/values');
@@ -56,10 +53,10 @@ export const colors = {
   darkBg: new CustomProp('color-dark-bg', '#262633'),
   slate: new CustomProp('color-slate', '#929299'),
 
+  lighterGreen: new CustomProp('color-lighter-green', '#b1ffe2'),
   lightGreen: new CustomProp('color-light-green', '#16B378'),
   darkGreen: new CustomProp('color-dark-green', '#009058'),
   darkerGreen: new CustomProp('color-darker-green', '#007548'),
-  lighterGreen: new CustomProp('color-lighter-green', '#b1ffe2'),
 
   lighterBlue: new CustomProp('color-lighter-blue', '#87b2f9'),
   lightBlue: new CustomProp('color-light-blue', '#3B82F6'),
@@ -114,7 +111,7 @@ export const vars = {
   labelTextBg:    new CustomProp('label-text-bg', '#FFFFFF'),
   labelActiveBg:  new CustomProp('label-active-bg', '#F0F0F0'),
 
-  controlMargin:  new CustomProp('normal-margin', '2px'),
+  controlMargin:  new CustomProp('normal-margin',  '2px'),
   controlPadding: new CustomProp('normal-padding', '3px 5px'),
   tightPadding:   new CustomProp('tight-padding',  '1px 2px'),
   loosePadding:   new CustomProp('loose-padding',  '5px 15px'),
@@ -136,6 +133,8 @@ export const vars = {
   toastBg: new CustomProp('toast-bg', '#040404'),
 
   /* Z indexes */
+  insertColumnLineZIndex: new CustomProp('insert-column-line-z-index', '20'),
+  popupSectionBackdropZIndex: new CustomProp('popup-section-backdrop-z-index', '100'),
   menuZIndex: new CustomProp('menu-z-index', '999'),
   modalZIndex: new CustomProp('modal-z-index', '999'),
   onboardingBackdropZIndex: new CustomProp('onboarding-backdrop-z-index', '999'),
@@ -166,8 +165,10 @@ export const theme = {
   /* Text */
   text: new CustomProp('theme-text', undefined, colors.dark),
   lightText: new CustomProp('theme-text-light', undefined, colors.slate),
+  mediumText: new CustomProp('theme-text-medium', undefined, colors.darkText),
   darkText: new CustomProp('theme-text-dark', undefined, 'black'),
   errorText: new CustomProp('theme-text-error', undefined, colors.error),
+  errorTextHover: new CustomProp('theme-text-error-hover', undefined, '#BF0A31'),
   dangerText: new CustomProp('theme-text-danger', undefined, '#FFA500'),
   disabledText: new CustomProp('theme-text-disabled', undefined, colors.slate),
 
@@ -245,8 +246,6 @@ export const theme = {
     'black'),
   tooltipCloseButtonHoverBg: new CustomProp('theme-tooltip-close-button-hover-bg', undefined,
     'white'),
-  tooltipPopupHeaderFg: new CustomProp('theme-tooltip-popup-header-fg', undefined, colors.light),
-  tooltipPopupHeaderBg: new CustomProp('theme-tooltip-popup-header-bg', undefined, colors.lightGreen),
 
   /* Modals */
   modalBg: new CustomProp('theme-modal-bg', undefined, 'white'),
@@ -266,6 +265,7 @@ export const theme = {
 
   /* Popups */
   popupBg: new CustomProp('theme-popup-bg', undefined, 'white'),
+  popupSecondaryBg: new CustomProp('theme-popup-secondary-bg', undefined, colors.lightGrey),
   popupInnerShadow: new CustomProp('theme-popup-shadow-inner', undefined,
     'rgba(31, 37, 50, 0.31)'),
   popupOuterShadow: new CustomProp('theme-popup-shadow-outer', undefined,
@@ -290,6 +290,7 @@ export const theme = {
 
   /* Cell Editor */
   cellEditorFg: new CustomProp('theme-cell-editor-fg', undefined, colors.dark),
+  cellEditorPlaceholderFg: new CustomProp('theme-cell-editor-placeholder-fg', undefined, colors.slate),
   cellEditorBg: new CustomProp('theme-cell-editor-bg', undefined, colors.light),
 
   /* Cursor */
@@ -298,14 +299,12 @@ export const theme = {
   cursorReadonly: new CustomProp('theme-cursor-readonly', undefined, colors.slate),
 
   /* Tables */
-  tableHeaderFg: new CustomProp('theme-table-header-fg', undefined, 'unset'),
-  tableHeaderSelectedFg: new CustomProp('theme-table-header-selected-fg', undefined, 'unset'),
+  tableHeaderFg: new CustomProp('theme-table-header-fg', undefined, '#000'),
+  tableHeaderSelectedFg: new CustomProp('theme-table-header-selected-fg', undefined, '#000'),
   tableHeaderBg: new CustomProp('theme-table-header-bg', undefined, colors.lightGrey),
   tableHeaderSelectedBg: new CustomProp('theme-table-header-selected-bg', undefined,
     colors.mediumGreyOpaque),
   tableHeaderBorder: new CustomProp('theme-table-header-border', undefined, 'lightgray'),
-  tableHeaderBorderDark: new CustomProp('theme-table-header-border-dark', undefined,
-    colors.darkGrey),
   tableBodyBg: new CustomProp('theme-table-body-bg', undefined, 'white'),
   tableBodyBorder: new CustomProp('theme-table-body-border', undefined, colors.darkGrey),
   tableAddNewBg: new CustomProp('theme-table-add-new-bg', undefined, 'inherit'),
@@ -314,6 +313,7 @@ export const theme = {
     '#999999'),
   tableDragDropIndicator: new CustomProp('theme-table-drag-drop-indicator', undefined, 'gray'),
   tableDragDropShadow: new CustomProp('theme-table-drag-drop-shadow', undefined, '#F0F0F0'),
+  tableCellSummaryBg: new CustomProp('theme-table-cell-summary-bg', undefined, colors.mediumGrey),
 
   /* Cards */
   cardCompactWidgetBg: new CustomProp('theme-card-compact-widget-bg', undefined,
@@ -339,7 +339,7 @@ export const theme = {
   selection: new CustomProp('theme-selection', undefined, colors.selection),
   selectionDarker: new CustomProp('theme-selection-darker', undefined, 'rgba(22,179,120,0.25)'),
   selectionDarkest: new CustomProp('theme-selection-darkest', undefined, 'rgba(22,179,120,0.35)'),
-  selectionOpaqueFg: new CustomProp('theme-selection-opaque-fg', undefined, 'unset'),
+  selectionOpaqueFg: new CustomProp('theme-selection-opaque-fg', undefined, 'black'),
   selectionOpaqueBg: new CustomProp('theme-selection-opaque-bg', undefined,
     colors.selectionOpaque),
   selectionOpaqueDarkBg: new CustomProp('theme-selection-opaque-dark-bg', undefined,
@@ -371,6 +371,8 @@ export const theme = {
   controlPrimaryFg: new CustomProp('theme-control-primary-fg', undefined, vars.primaryFg),
   controlPrimaryBg: new CustomProp('theme-control-primary-bg', undefined, vars.primaryBg),
   controlSecondaryFg: new CustomProp('theme-control-secondary-fg', undefined, colors.slate),
+  controlSecondaryDisabledFg: new CustomProp('theme-control-secondary-disabled-fg',
+    undefined, colors.darkGrey),
   controlHoverFg: new CustomProp('theme-control-hover-fg', undefined, vars.controlFgHover),
   controlPrimaryHoverBg: new CustomProp('theme-control-primary-hover-bg', undefined,
     vars.primaryBgHover),
@@ -380,8 +382,6 @@ export const theme = {
     colors.darkGrey),
   controlDisabledFg: new CustomProp('theme-control-disabled-fg', undefined, colors.light),
   controlDisabledBg: new CustomProp('theme-control-disabled-bg', undefined, colors.slate),
-  controlPrimaryDisabled: new CustomProp('theme-control-primary-disabled', undefined,
-    colors.inactiveCursor),
   controlBorder: new CustomProp('theme-control-border', undefined, vars.controlBorder),
 
   /* Checkboxes */
@@ -436,16 +436,19 @@ export const theme = {
     colors.darkGrey),
 
   /* Right Panel */
-  rightPanelTabFg: new CustomProp('theme-right-panel-tab-fg', undefined, colors.dark),
-  rightPanelTabBg: new CustomProp('theme-right-panel-tab-bg', undefined, colors.lightGrey),
+  rightPanelTabFg: new CustomProp('theme-right-panel-tab-fg', undefined, colors.slate),
+  rightPanelTabBg: new CustomProp('theme-right-panel-tab-bg', undefined, colors.light),
   rightPanelTabIcon: new CustomProp('theme-right-panel-tab-icon', undefined, colors.slate),
   rightPanelTabIconHover: new CustomProp('theme-right-panel-tab-icon-hover', undefined,
-    colors.lightGreen),
-  rightPanelTabHoverBg: new CustomProp('theme-right-panel-tab-hover-bg', undefined,
-    colors.mediumGrey),
+    colors.dark),
+  rightPanelTabBorder: new CustomProp('theme-right-panel-tab-border', undefined, colors.mediumGrey),
+  rightPanelTabHoverBg: new CustomProp('theme-right-panel-tab-hover-bg', undefined, colors.light),
+  rightPanelTabHoverFg: new CustomProp('theme-right-panel-tab-hover-fg', undefined, colors.dark),
   rightPanelTabSelectedFg: new CustomProp('theme-right-panel-tab-selected-fg', undefined,
-    colors.light),
+    colors.dark),
   rightPanelTabSelectedBg: new CustomProp('theme-right-panel-tab-selected-bg', undefined,
+    colors.lightGrey),
+  rightPanelTabSelectedIcon: new CustomProp('theme-right-panel-tab-selected-icon', undefined,
     colors.lightGreen),
   rightPanelTabButtonHoverBg: new CustomProp('theme-right-panel-tab-button-hover-bg',
     undefined, colors.darkGreen),
@@ -464,8 +467,6 @@ export const theme = {
     undefined, colors.light),
   rightPanelToggleButtonEnabledBg: new CustomProp('theme-right-panel-toggle-button-enabled-bg',
     undefined, colors.dark),
-  rightPanelToggleButtonEnabledHoverFg: new CustomProp(
-    'theme-right-panel-toggle-button-enabled-hover-fg', undefined, colors.darkGrey),
   rightPanelToggleButtonDisabledFg: new CustomProp('theme-right-panel-toggle-button-disabled-fg',
     undefined, colors.light),
   rightPanelToggleButtonDisabledBg: new CustomProp('theme-right-panel-toggle-button-disabled-bg',
@@ -474,6 +475,10 @@ export const theme = {
     undefined, colors.mediumGreyOpaque),
   rightPanelFieldSettingsButtonBg: new CustomProp('theme-right-panel-field-settings-button-bg',
     undefined, 'lightgrey'),
+  rightPanelCustomWidgetButtonFg: new CustomProp('theme-right-panel-custom-widget-button-fg',
+    undefined, colors.dark),
+  rightPanelCustomWidgetButtonBg: new CustomProp('theme-right-panel-custom-widget-button-bg',
+    undefined, colors.darkGrey),
 
   /* Document History */
   documentHistorySnapshotFg: new CustomProp('theme-document-history-snapshot-fg', undefined,
@@ -487,9 +492,15 @@ export const theme = {
   documentHistorySnapshotBorder: new CustomProp('theme-document-history-snapshot-border',
     undefined, colors.mediumGrey),
   documentHistoryActivityText: new CustomProp('theme-document-history-activity-text', undefined,
-    'unset'),
+    colors.dark),
   documentHistoryActivityLightText: new CustomProp('theme-document-history-activity-text-light',
     undefined, '#333333'),
+  documentHistoryTableHeaderFg: new CustomProp('theme-document-history-table-header-fg',
+    undefined, '#000'),
+  documentHistoryTableBorder: new CustomProp('theme-document-history-table-border',
+    undefined, 'lightgray'),
+  documentHistoryTableBorderLight: new CustomProp('theme-document-history-table-border-light',
+    undefined, colors.darkGrey),
 
   /* Accents */
   accentIcon: new CustomProp('theme-accent-icon', undefined, colors.lightGreen),
@@ -509,6 +520,16 @@ export const theme = {
   inputReadonlyBg: new CustomProp('theme-input-readonly-bg', undefined, colors.lightGrey),
   inputReadonlyBorder: new CustomProp('theme-input-readonly-border', undefined, colors.mediumGreyOpaque),
 
+  /* Choice Tokens */
+  choiceTokenFg: new CustomProp('theme-choice-token-fg', undefined, '#000000'),
+  choiceTokenBlankFg: new CustomProp('theme-choice-token-blank-fg', undefined, colors.slate),
+  choiceTokenBg: new CustomProp('theme-choice-token-bg', undefined, colors.mediumGreyOpaque),
+  choiceTokenSelectedBg: new CustomProp('theme-choice-token-selected-bg', undefined, colors.darkGrey),
+  choiceTokenSelectedBorder: new CustomProp('theme-choice-token-selected-border', undefined, colors.lightGreen),
+  choiceTokenInvalidFg: new CustomProp('theme-choice-token-invalid-fg', undefined, '#000000'),
+  choiceTokenInvalidBg: new CustomProp('theme-choice-token-invalid-bg', undefined, 'white'),
+  choiceTokenInvalidBorder: new CustomProp('theme-choice-token-invalid-border', undefined, colors.error),
+
   /* Choice Entry */
   choiceEntryBg: new CustomProp('theme-choice-entry-bg', undefined, 'white'),
   choiceEntryBorder: new CustomProp('theme-choice-entry-border', undefined, colors.darkGrey),
@@ -519,7 +540,6 @@ export const theme = {
   selectButtonFg: new CustomProp('theme-select-button-fg', undefined, colors.dark),
   selectButtonPlaceholderFg: new CustomProp('theme-select-button-placeholder-fg', undefined,
     colors.slate),
-  selectButtonDisabledFg: new CustomProp('theme-select-button-disabled-fg', undefined, 'grey'),
   selectButtonBg: new CustomProp('theme-select-button-bg', undefined, 'white'),
   selectButtonBorder: new CustomProp('theme-select-button-border', undefined, colors.darkGrey),
   selectButtonBorderInvalid: new CustomProp('theme-select-button-border-invalid', undefined,
@@ -529,7 +549,7 @@ export const theme = {
   menuText: new CustomProp('theme-menu-text', undefined, colors.slate),
   menuLightText: new CustomProp('theme-menu-light-text', undefined, colors.slate),
   menuBg: new CustomProp('theme-menu-bg', undefined, 'white'),
-  menuSubheaderFg: new CustomProp('theme-menu-subheader-fg', undefined, 'unset'),
+  menuSubheaderFg: new CustomProp('theme-menu-subheader-fg', undefined, colors.dark),
   menuBorder: new CustomProp('theme-menu-border', undefined, colors.mediumGreyOpaque),
   menuShadow: new CustomProp('theme-menu-shadow', undefined, 'rgba(38, 38, 51, 0.6)'),
 
@@ -537,22 +557,23 @@ export const theme = {
   menuItemFg: new CustomProp('theme-menu-item-fg', undefined, 'black'),
   menuItemSelectedFg: new CustomProp('theme-menu-item-selected-fg', undefined, colors.light),
   menuItemSelectedBg: new CustomProp('theme-menu-item-selected-bg', undefined, vars.primaryBg),
-  menuItemDisabledFg: new CustomProp('theme-menu-item-disabled-fg', undefined, '#D9D9D9'),
+  menuItemDisabledFg: new CustomProp('theme-menu-item-disabled-fg', undefined, colors.darkGrey),
   menuItemIconFg: new CustomProp('theme-menu-item-icon-fg', undefined, colors.slate),
   menuItemIconSelectedFg: new CustomProp('theme-menu-item-icon-selected-fg', undefined, 'white'),
-  menuItemLinkFg: new CustomProp('theme-menu-item-link-fg', undefined, colors.lightGreen),
-  menuItemLinkSelectedFg: new CustomProp('theme-menu-item-link-selected-fg', undefined,
-    colors.darkGreen),
-  menuItemLinkselectedBg: new CustomProp('theme-menu-item-link-selected-bg', undefined,
-    colors.mediumGreyOpaque),
 
   /* Autocomplete */
   autocompleteMatchText: new CustomProp('theme-autocomplete-match-text', undefined,
     colors.lightGreen),
   autocompleteSelectedMatchText: new CustomProp('theme-autocomplete-selected-match-text',
     undefined, colors.lighterGreen),
-  autocompleteChoiceSelectedBg: new CustomProp('theme-autocomplete-item-selected-bg', undefined,
+  autocompleteItemSelectedBg: new CustomProp('theme-autocomplete-item-selected-bg', undefined,
     colors.mediumGreyOpaque),
+  autocompleteAddNewCircleFg: new CustomProp('theme-autocomplete-add-new-circle-fg', undefined,
+    colors.light),
+  autocompleteAddNewCircleBg: new CustomProp('theme-autocomplete-add-new-circle-bg', undefined,
+    colors.lightGreen),
+  autocompleteAddNewCircleSelectedBg: new CustomProp(
+    'theme-autocomplete-add-new-circle-selected-bg', undefined, colors.darkGreen),
 
   /* Search */
   searchBorder: new CustomProp('theme-search-border', undefined, 'grey'),
@@ -594,7 +615,7 @@ export const theme = {
   widgetPickerPrimaryBg: new CustomProp('theme-widget-picker-primary-bg', undefined, 'white'),
   widgetPickerSecondaryBg: new CustomProp('theme-widget-picker-secondary-bg', undefined,
     colors.lightGrey),
-  widgetPickerItemFg: new CustomProp('theme-widget-picker-item-fg', undefined, 'unset'),
+  widgetPickerItemFg: new CustomProp('theme-widget-picker-item-fg', undefined, colors.dark),
   widgetPickerItemSelectedBg: new CustomProp('theme-widget-picker-item-selected-bg', undefined,
     colors.mediumGrey),
   widgetPickerItemDisabledBg: new CustomProp('theme-widget-picker-item-disabled-bg', undefined,
@@ -651,7 +672,9 @@ export const theme = {
   /* Button Groups */
   buttonGroupFg: new CustomProp('theme-button-group-fg', undefined, colors.dark),
   buttonGroupLightFg: new CustomProp('theme-button-group-light-fg', undefined, colors.slate),
-  buttonGroupBg: new CustomProp('theme-button-group-bg', undefined, 'unset'),
+  buttonGroupBg: new CustomProp('theme-button-group-bg', undefined, 'transparent'),
+  buttonGroupBgHover: new CustomProp('theme-button-group-bg-hover', undefined,
+  colors.hover),
   buttonGroupIcon: new CustomProp('theme-button-group-icon', undefined, colors.slate),
   buttonGroupBorder: new CustomProp('theme-button-group-border', undefined, colors.darkGrey),
   buttonGroupBorderHover: new CustomProp('theme-button-group-border-hover', undefined,
@@ -670,6 +693,8 @@ export const theme = {
     colors.mediumGrey),
   accessRulesTableBodyFg: new CustomProp('theme-access-rules-table-body-fg', undefined,
     colors.dark),
+  accessRulesTableBodyLightFg: new CustomProp('theme-access-rules-table-body-light-fg', undefined,
+    colors.darkGrey),
   accessRulesTableBorder: new CustomProp('theme-access-rules-table-border', undefined,
     colors.slate),
   accessRulesColumnListBorder: new CustomProp('theme-access-rules-column-list-border', undefined,
@@ -694,7 +719,7 @@ export const theme = {
     undefined, colors.cursor),
 
   /* Cells */
-  cellFg: new CustomProp('theme-cell-fg', undefined, 'unset'),
+  cellFg: new CustomProp('theme-cell-fg', undefined, 'black'),
   cellBg: new CustomProp('theme-cell-bg', undefined, '#FFFFFF00'),
   cellZebraBg: new CustomProp('theme-cell-zebra-bg', undefined, '#F8F8F8'),
 
@@ -744,6 +769,9 @@ export const theme = {
   tutorialsPopupHeaderFg: new CustomProp('theme-tutorials-popup-header-fg', undefined,
     colors.lightGreen),
   tutorialsPopupBoxBg: new CustomProp('theme-tutorials-popup-box-bg', undefined, '#F5F5F5'),
+  tutorialsPopupCodeFg: new CustomProp('theme-tutorials-popup-code-fg', undefined, '#333333'),
+  tutorialsPopupCodeBg: new CustomProp('theme-tutorials-popup-code-bg', undefined, '#FFFFFF'),
+  tutorialsPopupCodeBorder: new CustomProp('theme-tutorials-popup-code-border', undefined, '#E1E4E5'),
 
   /* Ace */
   aceEditorBg: new CustomProp('theme-ace-editor-bg', undefined, 'white'),
@@ -772,16 +800,14 @@ export const theme = {
     undefined, colors.darkGrey),
   colorSelectFontOptionFg: new CustomProp('theme-color-select-font-option-fg',
     undefined, colors.dark),
-  colorSelectFontOptionBg: new CustomProp('theme-color-select-font-option-bg',
-    undefined, colors.light),
   colorSelectFontOptionBgHover: new CustomProp('theme-color-select-font-option-bg-hover',
     undefined, colors.lightGrey),
-  colorSelectFontOptionFgSelected: new CustomProp('theme-color-select-font-option-selected-fg',
+  colorSelectFontOptionFgSelected: new CustomProp('theme-color-select-font-option-fg-selected',
     undefined, colors.light),
-  colorSelectFontOptionBgSelected: new CustomProp('theme-color-select-font-option-selected-bg',
+  colorSelectFontOptionBgSelected: new CustomProp('theme-color-select-font-option-bg-selected',
     undefined, colors.dark),
   colorSelectColorSquareBorder: new CustomProp('theme-color-select-color-square-border',
-    undefined, '#D9D9D9'),
+    undefined, colors.darkGrey),
   colorSelectColorSquareBorderEmpty: new CustomProp('theme-color-select-color-square-border-empty',
     undefined, colors.dark),
   colorSelectInputFg: new CustomProp('theme-color-select-input-fg',
@@ -807,6 +833,14 @@ export const theme = {
   loginPageBg: new CustomProp('theme-login-page-bg', undefined, 'white'),
   loginPageBackdrop: new CustomProp('theme-login-page-backdrop', undefined, '#F5F8FA'),
   loginPageLine: new CustomProp('theme-login-page-line', undefined, colors.lightGrey),
+  loginPageGoogleButtonFg: new CustomProp('theme-login-page-google-button-fg', undefined,
+    colors.dark),
+  loginPageGoogleButtonBg: new CustomProp('theme-login-page-google-button-bg', undefined,
+    colors.lightGrey),
+  loginPageGoogleButtonBgHover: new CustomProp('theme-login-page-google-button-bg-hover',
+    undefined, colors.mediumGrey),
+  loginPageGoogleButtonBorder: new CustomProp('theme-login-page-google-button-border', undefined,
+    colors.darkGrey),
 
   /* Formula Assistant */
   formulaAssistantHeaderBg: new CustomProp(
@@ -815,6 +849,74 @@ export const theme = {
     'theme-formula-assistant-border', undefined, colors.darkGrey),
   formulaAssistantPreformattedTextBg: new CustomProp(
     'theme-formula-assistant-preformatted-text-bg', undefined, colors.lightGrey),
+
+  /* Attachments */
+  attachmentsEditorButtonFg: new CustomProp(
+    'theme-attachments-editor-button-fg', undefined, colors.darkGreen),
+  attachmentsEditorButtonHoverFg: new CustomProp(
+    'theme-attachments-editor-button-hover-fg', undefined, colors.lightGreen),
+  attachmentsEditorButtonBg: new CustomProp(
+    'theme-attachments-editor-button-bg', undefined, colors.light),
+  attachmentsEditorButtonHoverBg: new CustomProp(
+    'theme-attachments-editor-button-hover-bg', undefined, colors.mediumGreyOpaque),
+  attachmentsEditorButtonBorder: new CustomProp(
+    'theme-attachments-editor-button-border', undefined, colors.darkGrey),
+  attachmentsEditorButtonIcon: new CustomProp(
+    'theme-attachments-editor-button-icon', undefined, colors.slate),
+  attachmentsEditorBorder: new CustomProp(
+    'theme-attachments-editor-border', undefined, colors.mediumGreyOpaque),
+  attachmentsCellIconFg: new CustomProp(
+    'theme-attachments-cell-icon-fg', undefined, 'white'),
+  attachmentsCellIconBg: new CustomProp(
+    'theme-attachments-cell-icon-bg', undefined, colors.darkGrey),
+  attachmentsCellIconHoverBg: new CustomProp(
+    'theme-attachments-cell-icon-hover-bg', undefined, '#929299'),
+
+  /* Announcement Popups */
+  announcementPopupFg: new CustomProp('theme-announcement-popup-fg', undefined, '#000000'),
+  announcementPopupBg: new CustomProp('theme-announcement-popup-bg', undefined, colors.selectionOpaque),
+
+  /* Switches */
+  switchSliderFg: new CustomProp('theme-switch-slider-fg', undefined, '#ccc'),
+  switchCircleFg: new CustomProp('theme-switch-circle-fg', undefined, 'white'),
+
+  /* Toggle Checkboxes */
+  toggleCheckboxFg: new CustomProp('theme-toggle-checkbox-fg', undefined, '#606060'),
+
+  /* Numeric Spinners */
+  numericSpinnerFg: new CustomProp('theme-numeric-spinner-fg', undefined, '#606060'),
+
+  /* Custom Widget Gallery */
+  widgetGalleryBorder: new CustomProp('theme-widget-gallery-border', undefined, colors.darkGrey),
+  widgetGalleryBorderSelected: new CustomProp('theme-widget-gallery-border-selected', undefined,
+    colors.lightGreen),
+  widgetGalleryShadow: new CustomProp('theme-widget-gallery-shadow', undefined, '#0000001A'),
+  widgetGalleryBgHover: new CustomProp('theme-widget-gallery-bg-hover', undefined,
+    colors.lightGrey),
+  widgetGallerySecondaryHeaderFg: new CustomProp('theme-widget-gallery-secondary-header-fg',
+    undefined, colors.light),
+  widgetGallerySecondaryHeaderBg: new CustomProp('theme-widget-gallery-secondary-header-bg',
+    undefined, colors.slate),
+  widgetGallerySecondaryHeaderBgHover: new CustomProp(
+    'theme-widget-gallery-secondary-header-bg-hover', undefined, '#7E7E85'),
+
+  /* Markdown Cell */
+  markdownCellLightBg: new CustomProp('theme-markdown-cell-light-bg', undefined, colors.lightGrey),
+  markdownCellLightBorder: new CustomProp('theme-markdown-cell-light-border', undefined,
+    colors.mediumGreyOpaque),
+  markdownCellMediumBorder: new CustomProp('theme-markdown-cell-medium-border', undefined,
+    colors.darkGrey),
+
+  /* App Header */
+  appHeaderBg: new CustomProp('theme-app-header-bg', undefined, colors.light),
+  appHeaderBorder: new CustomProp('theme-app-header-border', undefined, colors.mediumGreyOpaque),
+  appHeaderBorderHover: new CustomProp('theme-app-header-border-hover', undefined, colors.slate),
+
+  /* Card Button */
+  cardButtonBorder: new CustomProp('theme-card-button-border', undefined, colors.darkGrey),
+  cardButtonBorderSelected: new CustomProp('theme-card-button-border-selected', undefined,
+    colors.lightGreen),
+  cardButtonShadow: new CustomProp('theme-card-button-shadow', undefined, "#0000001A"),
 };
 
 const cssColors = values(colors).map(v => v.decl()).join('\n');
@@ -915,6 +1017,22 @@ export function isNarrowScreenObs(): Observable<boolean> {
   return _isNarrowScreenObs;
 }
 
+export function isXSmallScreen() {
+  return window.innerWidth < smallScreenWidth;
+}
+
+let _isXSmallScreenObs: Observable<boolean>|undefined;
+
+// Returns a singleton observable for whether the screen is an extra small one.
+export function isXSmallScreenObs(): Observable<boolean> {
+  if (!_isXSmallScreenObs) {
+    const obs = Observable.create<boolean>(null, isXSmallScreen());
+    window.addEventListener('resize', () => obs.set(isXSmallScreen()));
+    _isXSmallScreenObs = obs;
+  }
+  return _isXSmallScreenObs;
+}
+
 export const cssHideForNarrowScreen = styled('div', `
   @media ${mediaSmall} {
     & {
@@ -937,25 +1055,6 @@ export function isScreenResizing(): Observable<boolean> {
   return _isScreenResizingObs;
 }
 
-export function prefersDarkMode(): boolean {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches;
-}
-
-let _prefersDarkModeObs: PausableObservable<boolean>|undefined;
-
-/**
- * Returns a singleton observable for whether the user agent prefers dark mode.
- */
-export function prefersDarkModeObs(): PausableObservable<boolean> {
-  if (!_prefersDarkModeObs) {
-    const query = window.matchMedia('(prefers-color-scheme: dark)');
-    const obs = createPausableObs<boolean>(null, query.matches);
-    query.addEventListener('change', event => obs.set(event.matches));
-    _prefersDarkModeObs = obs;
-  }
-  return _prefersDarkModeObs;
-}
-
 /**
  * Attaches the global css properties to the document's root to make them available in the page.
  */
@@ -969,81 +1068,6 @@ export function attachCssRootVars(productFlavor: ProductFlavor, varsOnly: boolea
   }
   const interfaceStyle = urlState().state.get().params?.style || 'full';
   document.body.classList.add(`interface-${interfaceStyle}`);
-}
-
-/**
- * Attaches theme-related css properties to the theme style element.
- */
-export function attachCssThemeVars({appearance, colors: themeColors}: Theme) {
-  // Prepare the custom properties needed for applying the theme.
-  const properties = Object.entries(themeColors)
-    .map(([name, value]) => `--grist-theme-${name}: ${value};`);
-
-  // Include properties for styling the scrollbar.
-  properties.push(...getCssScrollbarProperties(appearance));
-
-  // Include properties for picking an appropriate background image.
-  properties.push(...getCssThemeBackgroundProperties(appearance));
-
-  // Apply the properties to the theme style element.
-  getOrCreateStyleElement('grist-theme').textContent = `:root {
-${properties.join('\n')}
-  }`;
-
-  // Make the browser aware of the color scheme.
-  document.documentElement.style.setProperty(`color-scheme`, appearance);
-
-  // Cache the appearance in local storage; this is currently used to apply a suitable
-  // background image that's shown while the application is loading.
-  getStorage().setItem('appearance', appearance);
-}
-
-/**
- * Gets scrollbar-related css properties that are appropriate for the given `appearance`.
- *
- * Note: Browser support for customizing scrollbars is still a mixed bag; the bulk of customization
- * is non-standard and unsupported by Firefox. If support matures, we could expose some of these in
- * custom themes, but for now we'll just go with reasonable presets.
- */
-function getCssScrollbarProperties(appearance: ThemeAppearance) {
-  return [
-    '--scroll-bar-fg: ' +
-      (appearance === 'dark' ? '#6B6B6B;' : '#A8A8A8;'),
-    '--scroll-bar-hover-fg: ' +
-      (appearance === 'dark' ? '#7B7B7B;' : '#8F8F8F;'),
-    '--scroll-bar-active-fg: ' +
-      (appearance === 'dark' ? '#8B8B8B;' : '#7C7C7C;'),
-    '--scroll-bar-bg: ' +
-      (appearance === 'dark' ? '#2B2B2B;' : '#F0F0F0;'),
-  ];
-}
-
-/**
- * Gets background-related css properties that are appropriate for the given `appearance`.
- *
- * Currently, this sets a property for showing a background image that's visible while a page
- * is loading.
- */
-function getCssThemeBackgroundProperties(appearance: ThemeAppearance) {
-  const value = appearance === 'dark'
-    ? 'url("img/prismpattern.png")'
-    : 'url("img/gplaypattern.png")';
-  return [`--grist-theme-bg: ${value};`];
-}
-
-/**
- * Gets or creates a style element in the head of the document with the given `id`.
- *
- * Useful for grouping CSS values such as theme custom properties without needing to
- * pollute the document with in-line styles.
- */
-function getOrCreateStyleElement(id: string) {
-  let style = document.head.querySelector(id);
-  if (style) { return style; }
-  style = document.createElement('style');
-  style.setAttribute('id', id);
-  document.head.append(style);
-  return style;
 }
 
 // A dom method to hide element in print view

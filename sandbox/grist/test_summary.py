@@ -4,10 +4,13 @@ files: test_summary.py and test_summary2.py.
 """
 
 import logging
+import unittest
+
 import actions
 import summary
-import testutil
 import test_engine
+import testutil
+import useractions
 from test_engine import Table, Column, View, Section, Field
 from useractions import allowed_summary_change
 
@@ -870,6 +873,57 @@ class Address:
       [ 2,    2.0,  [3],      1,        6   ],
     ])
 
+  def test_remove_source_columns_with_display_column(self):
+    # Verify a fix for a specific bug: removing multiple groupby source columns
+    # when the summary table contains a display column.
+
+    self.apply_user_action(["AddEmptyTable", None])
+    # Group by A and B
+    self.apply_user_action(["CreateViewSection", 1, 0, "record", [2,3], None])
+    # Add a display column for the group column
+    self.apply_user_action(['SetDisplayFormula', 'Table1_summary_A_B', None, 7, '$group.C'])
+
+    # Verify metadata and initially.
+    self.assertTables([
+      Table(1, "Table1", summarySourceTable=0, primaryViewId=1, columns=[
+        Column(1, "manualSort", "ManualSortPos",  False,  "", 0),
+        Column(2, "A",          "Any",        True,  "", 0),
+        Column(3, "B",          "Any",        True,  "", 0),
+        Column(4, "C",          "Any",        True,  "", 0),
+      ]),
+      Table(2, "Table1_summary_A_B", summarySourceTable=1, primaryViewId=0, columns=[
+        Column(5, "A",          "Any",            False, "", 2),
+        Column(6, "B",          "Any",            False, "", 3),
+        Column(7, "group",      "RefList:Table1", True,  "table.getSummarySourceGroup(rec)", 0),
+        Column(8, "count",      "Int",            True,  "len($group)", 0),
+        Column(9, "gristHelper_Display", "Any",   True,  "$group.C", 0),
+      ])
+    ])
+
+    user_actions = [
+      useractions.from_repr(ua) for ua in
+      [
+        ['RemoveColumn', 'Table1', 'A'],
+        ['RemoveColumn', 'Table1', 'B'],
+      ]
+    ]
+    self.engine.apply_user_actions(user_actions)
+
+    # Verify that the final structure is as expected.
+    self.assertTables([
+      Table(1, "Table1", summarySourceTable=0, primaryViewId=1, columns=[
+        Column(1, "manualSort", "ManualSortPos",  False,  "", 0),
+        Column(4, "C",          "Any",        True,  "", 0),
+      ]),
+      # Table1_summary_A_B was removed and recreated as Table1_summary.
+      # This removed Table1_summary_A_B.group which automatically removed gristHelper_Display
+      # which led to an error in the past.
+      Table(4, "Table1_summary", summarySourceTable=1, primaryViewId=0, columns=[
+        Column(14, "group",      "RefList:Table1", True,  "table.getSummarySourceGroup(rec)", 0),
+        Column(15, "count",      "Int",            True,  "len($group)", 0),
+      ])
+    ])
+
   #----------------------------------------------------------------------
   # pylint: disable=R0915
   def test_allow_select_by_change(self):
@@ -907,49 +961,49 @@ class Address:
     old = '{"widget":"Spinner","alignment":"center"}'
     self.assertTrue(widgetOptions(new, old))
 
-    # Can update but must leave other options.
-    new = '{"widget":"TextBox","cant":"center"}'
-    old = '{"widget":"Spinner","cant":"center"}'
+    # Can update but must leave choices options.
+    new = '{"widget":"TextBox","choices":"center"}'
+    old = '{"widget":"Spinner","choices":"center"}'
     self.assertTrue(widgetOptions(new, old))
 
     # Can't add protected property when old was empty.
-    new = '{"widget":"TextBox","cant":"new"}'
+    new = '{"widget":"TextBox","choices":"new"}'
     old = None
     self.assertFalse(widgetOptions(new, old))
 
     # Can't remove when there was a protected property.
     new = None
-    old = '{"widget":"TextBox","cant":"old"}'
+    old = '{"widget":"TextBox","choices":"old"}'
     self.assertFalse(widgetOptions(new, old))
 
     # Can't update by omitting.
     new = '{"widget":"TextBox"}'
-    old = '{"widget":"TextBox","cant":"old"}'
+    old = '{"widget":"TextBox","choices":"old"}'
     self.assertFalse(widgetOptions(new, old))
 
     # Can't update by changing.
-    new = '{"widget":"TextBox","cant":"new"}'
-    old = '{"widget":"TextBox","cant":"old"}'
+    new = '{"widget":"TextBox","choices":"new"}'
+    old = '{"widget":"TextBox","choices":"old"}'
     self.assertFalse(widgetOptions(new, old))
 
     # Can't update by adding.
-    new = '{"widget":"TextBox","cant":"new"}'
+    new = '{"widget":"TextBox","choices":"new"}'
     old = '{"widget":"TextBox"}'
     self.assertFalse(widgetOptions(new, old))
 
     # Can update objects
-    new = '{"widget":"TextBox","alignment":{"prop":1},"cant":{"prop":1}}'
-    old = '{"widget":"TextBox","alignment":{"prop":2},"cant":{"prop":1}}'
+    new = '{"widget":"TextBox","alignment":{"prop":1},"choices":{"prop":1}}'
+    old = '{"widget":"TextBox","alignment":{"prop":2},"choices":{"prop":1}}'
     self.assertTrue(widgetOptions(new, old))
 
     # Can't update objects
-    new = '{"widget":"TextBox","cant":{"prop":1}}'
-    old = '{"widget":"TextBox","cant":{"prop":2}}'
+    new = '{"widget":"TextBox","choices":{"prop":1}}'
+    old = '{"widget":"TextBox","choices":{"prop":2}}'
     self.assertFalse(widgetOptions(new, old))
 
     # Can't update lists
-    new = '{"widget":"TextBox","cant":[1, 2]}'
-    old = '{"widget":"TextBox","cant":[2, 1]}'
+    new = '{"widget":"TextBox","choices":[1, 2]}'
+    old = '{"widget":"TextBox","choices":[2, 1]}'
     self.assertFalse(widgetOptions(new, old))
 
     # Can update lists
@@ -958,7 +1012,10 @@ class Address:
     self.assertTrue(widgetOptions(new, old))
 
     # Can update without changing list.
-    new = '{"widget":"TextBox","dontChange":[1, 2]}'
-    old = '{"widget":"Spinner","dontChange":[1, 2]}'
+    new = '{"widget":"TextBox","choices":[1, 2]}'
+    old = '{"widget":"Spinner","choices":[1, 2]}'
     self.assertTrue(widgetOptions(new, old))
   # pylint: enable=R0915
+
+if __name__ == "__main__":
+  unittest.main()

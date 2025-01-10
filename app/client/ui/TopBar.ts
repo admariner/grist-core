@@ -8,13 +8,15 @@ import {workspaceName} from 'app/client/models/WorkspaceInfo';
 import {AccountWidget} from 'app/client/ui/AccountWidget';
 import {buildNotifyMenuButton} from 'app/client/ui/NotifyUI';
 import {manageTeamUsersApp} from 'app/client/ui/OpenUserManager';
+import {UpgradeButton} from 'app/client/ui/ProductUpgrades';
 import {buildShareMenuButton} from 'app/client/ui/ShareMenu';
+import {SupportGristButton} from 'app/client/ui/SupportGristButton';
 import {hoverTooltip} from 'app/client/ui/tooltips';
 import {cssHoverCircle, cssTopBarBtn} from 'app/client/ui/TopBarCss';
 import {buildLanguageMenu} from 'app/client/ui/LanguageMenu';
 import {docBreadcrumbs} from 'app/client/ui2018/breadcrumbs';
 import {basicButton} from 'app/client/ui2018/buttons';
-import {cssHideForNarrowScreen, testId, theme} from 'app/client/ui2018/cssVars';
+import {cssHideForNarrowScreen, isNarrowScreenObs, testId, theme} from 'app/client/ui2018/cssVars';
 import {IconName} from 'app/client/ui2018/IconList';
 import {menuAnnotate} from 'app/client/ui2018/menus';
 import {COMMENTS} from 'app/client/models/features';
@@ -23,24 +25,25 @@ import {Computed, dom, DomElementArg, makeTestId, MultiHolder, Observable, style
 
 const t = makeT('TopBar');
 
-export function createTopBarHome(appModel: AppModel) {
+export function createTopBarHome(appModel: AppModel, onSave?: (personal: boolean) => Promise<unknown>){
   const isAnonymous = !appModel.currentValidUser;
 
   return [
     cssFlexSpace(),
-    appModel.supportGristNudge.showButton(),
-    (appModel.isTeamSite && roles.canEditAccess(appModel.currentOrg?.access || null) ?
-      [
-        basicButton(
-          t("Manage Team"),
-          dom.on('click', () => manageTeamUsersApp(appModel)),
-          testId('topbar-manage-team')
-        ),
-        cssSpacer()
-      ] :
-      null
+    cssButtons(
+      dom.create(UpgradeButton, appModel),
+      dom.create(SupportGristButton, appModel),
+      (appModel.isTeamSite && roles.canEditAccess(appModel.currentOrg?.access || null) ?
+        [
+          basicButton(
+            t("Manage team"),
+            dom.on('click', () => manageTeamUsersApp({app: appModel, onSave})),
+            testId('topbar-manage-team')
+          ),
+        ] :
+        null
+      ),
     ),
-
     buildLanguageMenu(appModel),
     isAnonymous ? null : buildNotifyMenuButton(appModel.notifier, appModel),
     dom('div', dom.create(AccountWidget, appModel)),
@@ -72,6 +75,10 @@ export function createTopBarDoc(owner: MultiHolder, appModel: AppModel, pageMode
       return module.SearchModelImpl.create(use.owner, gristDoc);
     });
 
+  const isSearchOpen = Computed.create(owner, searchModelObs, (use, searchModel) => {
+    return Boolean(searchModel && use(searchModel.isOpen));
+  });
+
   const isUndoRedoAvailable = Computed.create(owner, use => {
     const gristDoc = use(pageModel.gristDoc);
     if (!gristDoc) { return false; }
@@ -102,7 +109,8 @@ export function createTopBarDoc(owner: MultiHolder, appModel: AppModel, pageMode
           isPublic: Computed.create(owner, doc, (use, _doc) => Boolean(_doc && _doc.public)),
           isTemplate: pageModel.isTemplate,
           isAnonymous,
-        })
+        }),
+        dom.hide(use => use(isSearchOpen) && use(isNarrowScreenObs())),
       )
     ),
     cssFlexSpace(),
@@ -111,12 +119,14 @@ export function createTopBarDoc(owner: MultiHolder, appModel: AppModel, pageMode
     dom.maybe(pageModel.undoState, (state) => [
       topBarUndoBtn('Undo',
         dom.on('click', () => state.isUndoDisabled.get() || allCommands.undo.run()),
+        dom.hide(use => use(isSearchOpen)),
         hoverTooltip('Undo', {key: 'topBarBtnTooltip'}),
         cssHoverCircle.cls('-disabled', use => use(state.isUndoDisabled) || !use(isUndoRedoAvailable)),
         testId('undo'),
       ),
       topBarUndoBtn('Redo',
         dom.on('click', () => state.isRedoDisabled.get() || allCommands.redo.run()),
+        dom.hide(use => use(isSearchOpen)),
         hoverTooltip('Redo', {key: 'topBarBtnTooltip'}),
         cssHoverCircle.cls('-disabled', use => use(state.isRedoDisabled) || !use(isUndoRedoAvailable)),
         testId('redo'),
@@ -188,6 +198,12 @@ function topBarUndoBtn(iconName: IconName, ...domArgs: DomElementArg[]): Element
     ...domArgs
   );
 }
+
+const cssButtons = styled('div', `
+  display: flex;
+  gap: 8px;
+  margin-right: 8px;
+`);
 
 const cssTopBarUndoBtn = styled(cssTopBarBtn, `
   background-color: ${theme.topBarButtonSecondaryFg};

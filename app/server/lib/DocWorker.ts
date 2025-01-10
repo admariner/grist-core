@@ -3,7 +3,7 @@
  * In hosted environment, this comprises the functionality of the DocWorker instance type.
  */
 import {isAffirmative} from 'app/common/gutil';
-import {HomeDBManager} from 'app/gen-server/lib/HomeDBManager';
+import {HomeDBManager} from 'app/gen-server/lib/homedb/HomeDBManager';
 import {ActionHistoryImpl} from 'app/server/lib/ActionHistoryImpl';
 import {assertAccess, getOrSetDocAuth, RequestWithLogin} from 'app/server/lib/Authorizer';
 import {Client} from 'app/server/lib/Client';
@@ -13,7 +13,7 @@ import {filterDocumentInPlace} from 'app/server/lib/filterUtils';
 import {GristServer} from 'app/server/lib/GristServer';
 import {IDocStorageManager} from 'app/server/lib/IDocStorageManager';
 import log from 'app/server/lib/log';
-import {getDocId, integerParam, optStringParam, stringParam} from 'app/server/lib/requestUtils';
+import {getDocId, integerParam, optIntegerParam, optStringParam, stringParam} from 'app/server/lib/requestUtils';
 import {OpenMode, quoteIdent, SQLiteDB} from 'app/server/lib/SQLiteDB';
 import contentDisposition from 'content-disposition';
 import * as express from 'express';
@@ -39,10 +39,11 @@ export class DocWorker {
       const docSession = this._getDocSession(stringParam(req.query.clientId, 'clientId'),
                                              integerParam(req.query.docFD, 'docFD'));
       const activeDoc = docSession.activeDoc;
-      const colId = stringParam(req.query.colId, 'colId');
-      const tableId = stringParam(req.query.tableId, 'tableId');
-      const rowId = integerParam(req.query.rowId, 'rowId');
-      const cell = {colId, tableId, rowId};
+      const colId = optStringParam(req.query.colId, 'colId');
+      const tableId = optStringParam(req.query.tableId, 'tableId');
+      const rowId = optIntegerParam(req.query.rowId, 'rowId');
+      const cell =
+        colId && tableId && rowId ? { colId, tableId, rowId } : undefined;
       const maybeNew = isAffirmative(req.query.maybeNew);
       const attId = integerParam(req.query.attId, 'attId');
       const attRecord = activeDoc.getAttachmentMetadata(attId);
@@ -61,6 +62,7 @@ export class DocWorker {
         .type(ext)
         .set('Content-Disposition', contentDispHeader)
         .set('Cache-Control', 'private, max-age=3600')
+        .set("Content-Security-Policy", "sandbox; default-src: 'none'")
         .send(data);
     } catch (err) {
       res.status(404).send({error: err.toString()});
@@ -68,13 +70,9 @@ export class DocWorker {
   }
 
   public async downloadDoc(req: express.Request, res: express.Response,
-                           storageManager: IDocStorageManager): Promise<void> {
+                           storageManager: IDocStorageManager, filename: string): Promise<void> {
     const mreq = req as RequestWithLogin;
     const docId = getDocId(mreq);
-
-    // Query DB for doc metadata to get the doc title.
-    const doc = await this._dbManager.getDoc(req);
-    const docTitle = doc.name;
 
     // Get a copy of document for downloading.
     const tmpPath = await storageManager.getCopy(docId);
@@ -88,16 +86,20 @@ export class DocWorker {
     await filterDocumentInPlace(docSessionFromRequest(mreq), tmpPath);
     // NOTE: We may want to reconsider the mimeType used for Grist files.
     return res.type('application/x-sqlite3')
-      .download(tmpPath, (optStringParam(req.query.title) || docTitle || 'document') + ".grist", async (err: any) => {
-        if (err) {
-          if (err.message && /Request aborted/.test(err.message)) {
-            log.warn(`Download request aborted for doc ${docId}`, err);
-          } else {
-            log.error(`Download failure for doc ${docId}`, err);
+      .download(
+        tmpPath,
+        filename + ".grist",
+        async (err: any) => {
+          if (err) {
+            if (err.message && /Request aborted/.test(err.message)) {
+              log.warn(`Download request aborted for doc ${docId}`, err);
+            } else {
+              log.error(`Download failure for doc ${docId}`, err);
+            }
           }
+          await fse.unlink(tmpPath);
         }
-        await fse.unlink(tmpPath);
-      });
+      );
   }
 
   // Register main methods related to documents.
@@ -118,7 +120,6 @@ export class DocWorker {
       cancelImportFiles:        activeDocMethod.bind(null, 'editors', 'cancelImportFiles'),
       generateImportDiff:       activeDocMethod.bind(null, 'editors', 'generateImportDiff'),
       addAttachments:           activeDocMethod.bind(null, 'editors', 'addAttachments'),
-      removeInstanceFromDoc:    activeDocMethod.bind(null, 'editors', 'removeInstanceFromDoc'),
       startBundleUserActions:   activeDocMethod.bind(null, 'editors', 'startBundleUserActions'),
       stopBundleUserActions:    activeDocMethod.bind(null, 'editors', 'stopBundleUserActions'),
       autocomplete:             activeDocMethod.bind(null, 'viewers', 'autocomplete'),
@@ -131,6 +132,9 @@ export class DocWorker {
       waitForInitialization:    activeDocMethod.bind(null, 'viewers', 'waitForInitialization'),
       getUsersForViewAs:        activeDocMethod.bind(null, 'viewers', 'getUsersForViewAs'),
       getAccessToken:           activeDocMethod.bind(null, 'viewers', 'getAccessToken'),
+      getShare:                 activeDocMethod.bind(null, 'owners', 'getShare'),
+      startTiming:              activeDocMethod.bind(null, 'owners', 'startTiming'),
+      stopTiming:               activeDocMethod.bind(null, 'owners', 'stopTiming'),
     });
   }
 
@@ -156,7 +160,7 @@ export class DocWorker {
     const mreq = req as RequestWithLogin;
     let urlId: string|undefined;
     try {
-      if (optStringParam(req.query.clientId)) {
+      if (optStringParam(req.query.clientId, 'clientId')) {
         const activeDoc = this._getDocSession(stringParam(req.query.clientId, 'clientId'),
                                               integerParam(req.query.docFD, 'docFD')).activeDoc;
         // TODO: The docId should be stored in the ActiveDoc class. Currently docName is
@@ -189,7 +193,7 @@ export class DocWorker {
  * Translates calls from the browser client into calls of the form
  * `activeDoc.method(docSession, ...args)`.
  */
-async function activeDocMethod(role: 'viewers'|'editors'|null, methodName: string, client: Client,
+async function activeDocMethod(role: 'viewers'|'editors'|'owners'|null, methodName: string, client: Client,
                                docFD: number, ...args: any[]): Promise<any> {
   const docSession = client.getDocSession(docFD);
   const activeDoc = docSession.activeDoc;
@@ -210,6 +214,8 @@ async function removeData(filename: string) {
   for (const tableId of tableIds) {
     await db.run(`DELETE FROM ${quoteIdent(tableId)}`);
   }
+  await db.run(`DELETE FROM _grist_Attachments`);
+  await db.run(`DELETE FROM _gristsys_Files`);
   await db.close();
 }
 

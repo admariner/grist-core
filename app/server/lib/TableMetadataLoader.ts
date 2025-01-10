@@ -1,4 +1,5 @@
 import { BulkColValues, TableColValues, TableDataAction, toTableDataAction } from 'app/common/DocActions';
+import log from 'app/server/lib/log';
 
 import fromPairs = require('lodash/fromPairs');
 
@@ -185,7 +186,9 @@ export class TableMetadataLoader {
     // Be careful to do the core push first, once we can.
     if (!this._corePushed) {
       if (this._corePush === undefined && newPushes.has('_grist_Tables') && newPushes.has('_grist_Tables_column')) {
-        this._corePush = this._counted(this.opCorePush());
+        this._corePush = this._counted(this.opCorePush()).catch(e => {
+          log.warn(`TableMetadataLoader opCorePush failed: ${e}`);
+        });
       }
       return;
     }
@@ -195,8 +198,12 @@ export class TableMetadataLoader {
     for (const tableId of [...newPushes].sort()) {
       // Put a limit on the number of outstanding pushes permitted.
       if (this._pushes.size >= this._pushed.size + 3) { break; }
-      this._pushes.set(tableId, this._counted(this.opPush(tableId)));
-    }
+      const promise = this._counted(this.opPush(tableId));
+      this._pushes.set(tableId, promise);
+      // Mark the promise as handled to avoid "unhandledRejection", but without affecting other
+      // code (which will still see `promise`, not the new promise returned by `.catch()`).
+      promise.catch(() => {});
+   }
   }
 
   // Wrapper to keep track of pending promises.

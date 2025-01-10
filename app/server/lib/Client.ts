@@ -1,27 +1,29 @@
 import {ApiError} from 'app/common/ApiError';
 import {BrowserSettings} from 'app/common/BrowserSettings';
-import {delay} from 'app/common/delay';
 import {CommClientConnect, CommMessage, CommResponse, CommResponseError} from 'app/common/CommTypes';
+import {delay} from 'app/common/delay';
+import {normalizeEmail} from 'app/common/emails';
 import {ErrorWithCode} from 'app/common/ErrorWithCode';
-import {UserProfile} from 'app/common/LoginSessionAPI';
+import {FullUser, UserProfile} from 'app/common/LoginSessionAPI';
 import {TelemetryMetadata} from 'app/common/Telemetry';
 import {ANONYMOUS_USER_EMAIL} from 'app/common/UserAPI';
 import {User} from 'app/gen-server/entity/User';
-import {HomeDBManager} from 'app/gen-server/lib/HomeDBManager';
 import {ActiveDoc} from 'app/server/lib/ActiveDoc';
 import {Authorizer} from 'app/server/lib/Authorizer';
 import {ScopedSession} from 'app/server/lib/BrowserSession';
 import type {Comm} from 'app/server/lib/Comm';
 import {DocSession} from 'app/server/lib/DocSession';
+import {GristServerSocket} from 'app/server/lib/GristServerSocket';
+import {HomeDBManager} from 'app/gen-server/lib/homedb/HomeDBManager';
 import log from 'app/server/lib/log';
-import {LogMethods} from "app/server/lib/LogMethods";
+import {LogMethods} from 'app/server/lib/LogMethods';
 import {MemoryPool} from 'app/server/lib/MemoryPool';
-import {shortDesc} from 'app/server/lib/shortDesc';
 import {fromCallback} from 'app/server/lib/serverUtils';
-import {i18n} from 'i18next';
+import {shortDesc} from 'app/server/lib/shortDesc';
 import * as crypto from 'crypto';
+import {IncomingMessage} from 'http';
+import {i18n} from 'i18next';
 import moment from 'moment';
-import * as WebSocket from 'ws';
 
 // How many messages and bytes to accumulate for a disconnected client before booting it.
 // The benefit is that a client who temporarily disconnects and reconnects without missing much,
@@ -34,9 +36,6 @@ export type ClientMethod = (client: Client, ...args: any[]) => Promise<unknown>;
 // How long the client state persists after a disconnect.
 const clientRemovalTimeoutMs = 300 * 1000;   // 300s = 5 minutes.
 
-// A hook for dependency injection.
-export const Deps = {clientRemovalTimeoutMs};
-
 // How much memory to allow using for large JSON responses before waiting for some to clear.
 // Max total across all clients and all JSON responses.
 const jsonResponseTotalReservation = 500 * 1024 * 1024;
@@ -44,6 +43,9 @@ const jsonResponseTotalReservation = 500 * 1024 * 1024;
 // above, it works to limit parallelism (to 25 responses that can be started in parallel).
 const jsonResponseReservation = 20 * 1024 * 1024;
 export const jsonMemoryPool = new MemoryPool(jsonResponseTotalReservation);
+
+// A hook for dependency injection.
+export const Deps = {clientRemovalTimeoutMs, jsonResponseReservation};
 
 /**
  * Generates and returns a random string to use as a clientId. This is better
@@ -96,15 +98,12 @@ export class Client {
   private _missedMessagesTotalLength: number = 0;
   private _destroyTimer: NodeJS.Timer|null = null;
   private _destroyed: boolean = false;
-  private _websocket: WebSocket|null;
-  private _websocketEventHandlers: Array<{event: string, handler: (...args: any[]) => void}> = [];
+  private _websocket: GristServerSocket|null = null;
+  private _req: IncomingMessage|null = null;
   private _org: string|null = null;
   private _profile: UserProfile|null = null;
-  private _userId: number|null = null;
-  private _userName: string|null = null;
-  private _userRef: string|null = null;
+  private _user: FullUser|undefined = undefined;
   private _firstLoginAt: Date|null = null;
-  private _isAnonymous: boolean = false;
   private _nextSeqId: number = 0;     // Next sequence-ID for messages sent to the client
 
   // Identifier for the current GristWSConnection object connected to this client.
@@ -133,18 +132,25 @@ export class Client {
     return this._locale;
   }
 
-  public setConnection(websocket: WebSocket, counter: string|null, browserSettings: BrowserSettings) {
+  public setConnection(options: {
+    websocket: GristServerSocket;
+    req: IncomingMessage;
+    counter: string|null;
+    browserSettings: BrowserSettings;
+  }) {
+    const {websocket, req, counter, browserSettings} = options;
     this._websocket = websocket;
+    this._req = req;
     this._counter = counter;
     this.browserSettings = browserSettings;
 
-    const addHandler = (event: string, handler: (...args: any[]) => void) => {
-      websocket.on(event, handler);
-      this._websocketEventHandlers.push({event, handler});
-    };
-    addHandler('error', (err: unknown) => this._onError(err));
-    addHandler('close', () => this._onClose());
-    addHandler('message', (msg: string) => this._onMessage(msg));
+    websocket.onerror = (err: Error) => this._onError(err);
+    websocket.onclose = () => this._onClose();
+    websocket.onmessage = (msg: string) => this._onMessage(msg);
+  }
+
+  public getConnectionRequest(): IncomingMessage|null {
+    return this._req;
   }
 
   /**
@@ -191,9 +197,22 @@ export class Client {
 
   public interruptConnection() {
     if (this._websocket) {
-      this._removeWebsocketListeners();
+      this._websocket.removeAllListeners();
       this._websocket.terminate();  // close() is inadequate when ws routed via loadbalancer
       this._websocket = null;
+    }
+  }
+
+  /**
+   * Sends a message to the client. If the send fails in a way that the message can't get queued
+   * (e.g. due to an unexpected exception in code), logs an error and interrupts the connection.
+   */
+  public async sendMessageOrInterrupt(messageObj: CommMessage|CommResponse|CommResponseError): Promise<void> {
+    try {
+      await this.sendMessage(messageObj);
+    } catch (e) {
+      this._log.error(null, 'sendMessage error', e);
+      this.interruptConnection();
     }
   }
 
@@ -221,7 +240,7 @@ export class Client {
     // Overall, a better solution would be to stream large responses, or to have the client
     // request data piecemeal (as we'd have to for handling large data).
 
-    await jsonMemoryPool.withReserved(jsonResponseReservation, async (updateReservation) => {
+    await jsonMemoryPool.withReserved(Deps.jsonResponseReservation, async (updateReservation) => {
       if (this._destroyed) {
         // If this Client got destroyed while waiting, stop here and release the reservation.
         return;
@@ -348,7 +367,7 @@ export class Client {
       // See also my report at https://stackoverflow.com/a/48411315/328565
       await delay(250);
 
-      if (!this._destroyed && this._websocket?.readyState === WebSocket.OPEN) {
+      if (!this._destroyed && this._websocket?.isOpen) {
         await this._sendToWebsocket(JSON.stringify({...clientConnectMsg, dup: true}));
       }
     } catch (err) {
@@ -411,16 +430,13 @@ export class Client {
 
   public setProfile(profile: UserProfile|null): void {
     this._profile = profile;
-    // Unset userId, so that we look it up again on demand. (Not that userId could change in
-    // practice via a change to profile, but let's not make any assumptions here.)
-    this._userId = null;
-    this._userName = null;
+    // Unset user, so that we look it up again on demand.
+    this._user = undefined;
     this._firstLoginAt = null;
-    this._isAnonymous = !profile;
   }
 
   public getProfile(): UserProfile|null {
-    if (this._isAnonymous) {
+    if (!this._profile) {
       return {
         name: 'Anonymous',
         email: ANONYMOUS_USER_EMAIL,
@@ -433,34 +449,31 @@ export class Client {
     // in the database (important since user name is now exposed via
     // user.Name in granular access support). TODO: might want to
     // subscribe to changes in user name while the document is open.
-    return this._profile ? {
-      ...this._profile,
-      ...(this._userName && { name: this._userName }),
-    } : null;
+    return {...this._profile, ...this._user};
   }
 
   public getCachedUserId(): number|null {
-    return this._userId;
+    return this._user?.id ?? null;
   }
 
   public getCachedUserRef(): string|null {
-    return this._userRef;
+    return this._user?.ref ?? null;
   }
 
   // Returns the userId for profile.email, or null when profile is not set; with caching.
   public async getUserId(dbManager: HomeDBManager): Promise<number|null> {
-    if (!this._userId) {
+    if (!this._user) {
       await this._refreshUser(dbManager);
     }
-    return this._userId;
+    return this._user?.id ?? null;
   }
 
   // Returns the userRef for profile.email, or null when profile is not set; with caching.
   public async getUserRef(dbManager: HomeDBManager): Promise<string|null> {
-    if (!this._userRef) {
+    if (!this._user) {
       await this._refreshUser(dbManager);
     }
-    return this._userRef;
+    return this._user?.ref ?? null;
   }
 
   // Returns the userId for profile.email, or throws 403 error when profile is not set.
@@ -471,10 +484,10 @@ export class Client {
   }
 
   public getLogMeta(meta: {[key: string]: any} = {}) {
-    if (this._profile) { meta.email = this._profile.email; }
-    // We assume the _userId has already been cached, which will be true always (for all practical
+    if (this._profile) { meta.email = this._user?.loginEmail || normalizeEmail(this._profile.email); }
+    // We assume the _user has already been cached, which will be true always (for all practical
     // purposes) because it's set when the Authorizer checks this client.
-    if (this._userId) { meta.userId = this._userId; }
+    if (this._user) { meta.userId = this._user.id; }
     // Likewise for _firstLoginAt, which we learn along with _userId.
     if (this._firstLoginAt) {
       meta.age = Math.floor(moment.duration(moment().diff(this._firstLoginAt)).asDays());
@@ -491,25 +504,23 @@ export class Client {
     const meta: TelemetryMetadata = {};
     // We assume the _userId has already been cached, which will be true always (for all practical
     // purposes) because it's set when the Authorizer checks this client.
-    if (this._userId) { meta.userId = this._userId; }
+    if (this._user) { meta.userId = this._user.id; }
     const altSessionId = this.getAltSessionId();
     if (altSessionId) { meta.altSessionId = altSessionId; }
     return meta;
   }
 
   private async _refreshUser(dbManager: HomeDBManager) {
-    if (this._profile) {
-      const user = await this._fetchUser(dbManager);
-      this._userId = (user && user.id) || null;
-      this._userName = (user && user.name) || null;
-      this._isAnonymous = this._userId && dbManager.getAnonymousUserId() === this._userId || false;
-      this._firstLoginAt = (user && user.firstLoginAt) || null;
-      this._userRef = user?.ref ?? null;
-    } else {
-      this._userId = dbManager.getAnonymousUserId();
-      this._userName = 'Anonymous';
-      this._isAnonymous = true;
-      this._firstLoginAt = null;
+    const user = this._profile ? await this._fetchUser(dbManager) : dbManager.getAnonymousUser();
+    this._user = user ? dbManager.makeFullUser(user) : undefined;
+    this._firstLoginAt = user?.firstLoginAt || null;
+  }
+
+  private async _onMessage(message: string): Promise<void> {
+    try {
+      await this._onMessageImpl(message);
+    } catch (err) {
+      this._log.warn(null, 'onMessage error received for message "%s": %s', shortDesc(message), err.stack);
     }
   }
 
@@ -517,7 +528,7 @@ export class Client {
    * Processes a request from a client. All requests from a client get a response, at least to
    * indicate success or failure.
    */
-  private async _onMessage(message: string): Promise<void> {
+  private async _onMessageImpl(message: string): Promise<void> {
     const request = JSON.parse(message);
     if (request.beat) {
       // this is a heart beat, to keep the websocket alive.  No need to reply.
@@ -562,7 +573,7 @@ export class Client {
         }
       }
     }
-    await this.sendMessage(response);
+    await this.sendMessageOrInterrupt(response);
   }
 
   // Fetch the user database record from profile.email, or null when profile is not set.
@@ -601,7 +612,7 @@ export class Client {
   /**
    * Processes an error on the websocket.
    */
-  private _onError(err: unknown) {
+  private _onError(err: Error) {
     this._log.warn(null, "onError", err);
     // TODO Make sure that this is followed by onClose when the connection is lost.
   }
@@ -610,7 +621,7 @@ export class Client {
    * Processes the closing of a websocket.
    */
   private _onClose() {
-    this._removeWebsocketListeners();
+    this._websocket?.removeAllListeners();
 
     // Remove all references to the websocket.
     this._websocket = null;
@@ -624,17 +635,6 @@ export class Client {
       }
       this._log.info(null, "websocket closed; will discard client in %s sec", Deps.clientRemovalTimeoutMs / 1000);
       this._destroyTimer = setTimeout(() => this.destroy(), Deps.clientRemovalTimeoutMs);
-    }
-  }
-
-  private _removeWebsocketListeners() {
-    if (this._websocket) {
-      // Avoiding websocket.removeAllListeners() because WebSocket.Server registers listeners
-      // internally for websockets it keeps track of, and we should not accidentally remove those.
-      for (const {event, handler} of this._websocketEventHandlers) {
-        this._websocket.off(event, handler);
-      }
-      this._websocketEventHandlers = [];
     }
   }
 }

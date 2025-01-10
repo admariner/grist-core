@@ -1,4 +1,4 @@
+import {createAppPage} from 'app/client/ui/createAppPage';
 import {createErrPage} from 'app/client/ui/errorPages';
-import {setupPage} from 'app/client/ui/setupPage';
 
-setupPage((appModel) => createErrPage(appModel));
+createAppPage((appModel) => createErrPage(appModel));
