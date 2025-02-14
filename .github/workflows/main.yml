@@ -11,30 +11,28 @@ on:
 
 jobs:
   build_and_test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       # it is helpful to know which sets of tests would have succeeded,
       # even when there is a failure.
       fail-fast: false
       matrix:
-        python-version: [3.9]
-        node-version: [14.x]
+        python-version: [3.11]
+        node-version: [22.x]
         tests:
-          - ':lint:python:client:common:smoke:'
+          - ':lint:python:client:common:smoke:stubs:'
           - ':server-1-of-2:'
           - ':server-2-of-2:'
-          - ':nbrowser-^[A-G]:'
-          - ':nbrowser-^[H-L]:'
-          - ':nbrowser-^[M-O]:'
-          - ':nbrowser-^[P-S]:'
-          - ':nbrowser-^[^A-S]:'
+          - ':gen-server:'
+          - ':nbrowser-^[A-D]:'
+          - ':nbrowser-^[E-L]:'
+          - ':nbrowser-^[M-N]:'
+          - ':nbrowser-^[O-R]:'
+          - ':nbrowser-^[^A-R]:'
         include:
           - tests: ':lint:python:client:common:smoke:'
-            node-version: 14.x
+            node-version: 22.x
             python-version: '3.10'
-          - tests: ':lint:python:client:common:smoke:'
-            node-version: 14.x
-            python-version: '3.11'
     steps:
       - uses: actions/checkout@v3
 
@@ -58,12 +56,15 @@ jobs:
       - name: Install Node.js packages
         run: yarn install
 
+      - name: Install gvisor
+        run: sudo apt install runsc
+
       - name: Run eslint
         if: contains(matrix.tests, ':lint:')
         run: yarn run lint:ci
 
       - name: Make sure bucket is versioned
-        if: contains(matrix.tests, ':server-')
+        if: contains(matrix.tests, ':server-') || contains(matrix.tests, ':gen-server:')
         env:
           AWS_ACCESS_KEY_ID: administrator
           AWS_SECRET_ACCESS_KEY: administrator
@@ -71,6 +72,10 @@ jobs:
 
       - name: Build Node.js code
         run: yarn run build:prod
+
+      - name: Install Google Chrome and chromedriver
+        if: contains(matrix.tests, ':nbrowser-') || contains(matrix.tests, ':smoke:') || contains(matrix.tests, ':stubs:')
+        run: buildtools/install_chrome_for_tests.sh -y
 
       - name: Run smoke test
         if: contains(matrix.tests, ':smoke:')
@@ -88,12 +93,56 @@ jobs:
         if: contains(matrix.tests, ':common:')
         run: yarn run test:common
 
+      - name: Run stubs tests
+        if: contains(matrix.tests, ':stubs:')
+        run: MOCHA_WEBDRIVER_HEADLESS=1 yarn run test:stubs
+
+      - name: Run gen-server tests with sqlite, minio and redis
+        if: contains(matrix.tests, ':gen-server:')
+        run: |
+          yarn run test:gen-server
+        # Anchors should be used once available. Not supported yet as of December 2024.
+        # https://github.com/actions/runner/issues/1182
+        env:
+          MOCHA_WEBDRIVER_HEADLESS: 1
+          TESTS: ${{ matrix.tests }}
+          GRIST_DOCS_MINIO_ACCESS_KEY: administrator
+          GRIST_DOCS_MINIO_SECRET_KEY: administrator
+          TEST_REDIS_URL: "redis://localhost/11"
+          GRIST_DOCS_MINIO_USE_SSL: 0
+          GRIST_DOCS_MINIO_ENDPOINT: localhost
+          GRIST_DOCS_MINIO_PORT: 9000
+          GRIST_DOCS_MINIO_BUCKET: grist-docs-test
+
+      - name: Run gen-server tests with postgres, minio and redis
+        if: contains(matrix.tests, ':gen-server:')
+        run: |
+          PGPASSWORD=$TYPEORM_PASSWORD psql -h $TYPEORM_HOST -U $TYPEORM_USERNAME -w $TYPEORM_DATABASE -c "SHOW ALL;" | grep ' jit '
+          yarn run test:gen-server
+        env:
+          MOCHA_WEBDRIVER_HEADLESS: 1
+          TESTS: ${{ matrix.tests }}
+          GRIST_DOCS_MINIO_ACCESS_KEY: administrator
+          GRIST_DOCS_MINIO_SECRET_KEY: administrator
+          TEST_REDIS_URL: "redis://localhost/11"
+          GRIST_DOCS_MINIO_USE_SSL: 0
+          GRIST_DOCS_MINIO_ENDPOINT: localhost
+          GRIST_DOCS_MINIO_PORT: 9000
+          GRIST_DOCS_MINIO_BUCKET: grist-docs-test
+          TYPEORM_TYPE: postgres
+          TYPEORM_HOST: localhost
+          TYPEORM_DATABASE: db_name
+          TYPEORM_USERNAME: db_user
+          TYPEORM_PASSWORD: db_password
+
       - name: Run server tests with minio and redis
         if: contains(matrix.tests, ':server-')
         run: |
           export TEST_SPLITS=$(echo $TESTS | sed "s/.*:server-\([^:]*\).*/\1/")
-          MOCHA_WEBDRIVER_HEADLESS=1 yarn run test:server
+          yarn run test:server
         env:
+          MOCHA_WEBDRIVER_HEADLESS: 1
+          TESTS: ${{ matrix.tests }}
           GRIST_DOCS_MINIO_ACCESS_KEY: administrator
           GRIST_DOCS_MINIO_SECRET_KEY: administrator
           TEST_REDIS_URL: "redis://localhost/11"
@@ -119,6 +168,7 @@ jobs:
           ARTIFACT_NAME=logs-$(echo $TESTS | sed 's/[^-a-zA-Z0-9]/_/g')
           echo "Artifact name is '$ARTIFACT_NAME'"
           echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> $GITHUB_ENV
+          mkdir -p $TESTDIR
           find $TESTDIR -iname "*.socket" -exec rm {} \;
         env:
           TESTS: ${{ matrix.tests }}
@@ -126,7 +176,7 @@ jobs:
 
       - name: Save artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ${{ runner.temp }}/test-logs  # only exists for webdriver tests
@@ -157,10 +207,28 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      postgresql:
+        image: postgres:latest
+        env:
+          POSTGRES_USER: db_user
+          POSTGRES_PASSWORD: db_password
+          POSTGRES_DB: db_name
+          # JIT is enabled by default since Postgres 17 and has a huge negative impact on performance,
+          # making many tests timeout.
+          # https://support.getgrist.com/self-managed/#what-is-a-home-database
+          POSTGRES_INITDB_ARGS: "-c jit=off"
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U db_user"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
   candidate:
     needs: build_and_test
     if: ${{ success() && github.event_name == 'push' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Fetch new candidate branch
         uses: actions/checkout@v3

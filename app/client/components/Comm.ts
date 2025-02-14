@@ -27,7 +27,7 @@ import * as dispose from 'app/client/lib/dispose';
 import * as log from 'app/client/lib/log';
 import {CommRequest, CommResponse, CommResponseBase, CommResponseError, ValidEvent} from 'app/common/CommTypes';
 import {UserAction} from 'app/common/DocActions';
-import {DocListAPI, OpenLocalDocResult} from 'app/common/DocListAPI';
+import {DocListAPI, OpenDocOptions, OpenLocalDocResult} from 'app/common/DocListAPI';
 import {GristServerAPI} from 'app/common/GristServerAPI';
 import {getInitialDocAssignment} from 'app/common/urlUtils';
 import {Events as BackboneEvents} from 'backbone';
@@ -68,10 +68,6 @@ export class Comm extends dispose.Disposable implements GristServerAPI, DocListA
   public renameDoc = this._wrapMethod('renameDoc');
   public getConfig = this._wrapMethod('getConfig');
   public updateConfig = this._wrapMethod('updateConfig');
-  public lookupEmail = this._wrapMethod('lookupEmail');
-  public getNewInvites = this._wrapMethod('getNewInvites');
-  public getLocalInvites = this._wrapMethod('getLocalInvites');
-  public ignoreLocalInvite = this._wrapMethod('ignoreLocalInvite');
   public showItemInFolder = this._wrapMethod('showItemInFolder');
   public getBasketTables = this._wrapMethod('getBasketTables');
   public embedTable = this._wrapMethod('embedTable');
@@ -149,9 +145,8 @@ export class Comm extends dispose.Disposable implements GristServerAPI, DocListA
    * committed to a document that is called in hosted Grist - all other methods
    * are called via DocComm.
    */
-  public async openDoc(docName: string, mode?: string,
-                       linkParameters?: Record<string, string>): Promise<OpenLocalDocResult> {
-    return this._makeRequest(null, docName, 'openDoc', docName, mode, linkParameters);
+  public async openDoc(docName: string, options?: OpenDocOptions): Promise<OpenLocalDocResult> {
+    return this._makeRequest(null, docName, 'openDoc', docName, options);
   }
 
   /**
@@ -343,6 +338,9 @@ export class Comm extends dispose.Disposable implements GristServerAPI, DocListA
             }
             if (message.details) {
               err.details = message.details;
+            }
+            if (message.error?.startsWith('[Sandbox] UniqueReferenceError')) {
+              err.code = 'UNIQUE_REFERENCE_VIOLATION';
             }
             err.shouldFork = message.shouldFork;
             log.warn(`Comm response #${reqId} ${r.methodName} ERROR:${code} ${message.error}`

@@ -13,11 +13,13 @@ export interface IEditorCommandGroup {
   [cmd: string]: () => void;
 }
 
+// Usually an editor is created for a field and provided FieldOptions, but it's possible to have
+// no field object, e.g. for a FormulaEditor for a conditional style rule.
 export interface Options {
   gristDoc: GristDoc;
   cellValue: CellValue;
   rowId: number;
-  formulaError: Observable<CellValue|undefined>;
+  formulaError?: Observable<CellValue|undefined>;
   editValue?: string;
   cursorPos: number;
   commands: IEditorCommandGroup;
@@ -28,6 +30,9 @@ export interface Options {
 export interface FieldOptions extends Options {
   field: ViewFieldRec;
 }
+
+// This represents any of the derived editor classes; the part after "&" restricts to non-abstract ones.
+export type IEditorConstructor = typeof NewBaseEditor & { new (...args: any[]): NewBaseEditor };
 
 /**
  * Required parameters:
@@ -44,8 +49,10 @@ export abstract class NewBaseEditor extends Disposable {
    * Editors and provided by FieldBuilder. TODO: remove this method once all editors have been
    * updated to new-style Disposables.
    */
-  public static create<Opt extends Options>(owner: IDisposableOwner|null, options: Opt): NewBaseEditor;
-  public static create<Opt extends Options>(options: Opt): NewBaseEditor;
+  public static create<T extends new (...args: any[]) => any, Opt extends Options>(
+    this: T, owner: IDisposableOwner|null, options: Opt): InstanceType<T>;
+  public static create<T extends new (...args: any[]) => any, Opt extends Options>(
+    this: T, options: Opt): InstanceType<T>;
   public static create(ownerOrOptions: any, options?: any): NewBaseEditor {
     return options ?
       Disposable.create.call(this as any, ownerOrOptions, options) :
@@ -54,9 +61,13 @@ export abstract class NewBaseEditor extends Disposable {
 
   /**
    * Check if the typed-in value should change the cell without opening the editor, and if so,
-   * returns the value to save. E.g. on typing " ", CheckBoxEditor toggles value without opening.
+   * returns the value to save. E.g. on typing <enter>, CheckBoxEditor toggles value without opening.
    */
-  public static skipEditor(typedVal: string|undefined, origVal: CellValue): CellValue|undefined {
+  public static skipEditor(
+    typedVal: string|undefined,
+    origVal: CellValue,
+    options?: {event?: KeyboardEvent|MouseEvent}
+  ): CellValue|undefined {
     return undefined;
   }
 

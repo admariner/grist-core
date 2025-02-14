@@ -3,8 +3,9 @@ import fetch, { RequestInit } from 'node-fetch';
 import {AbortController} from 'node-abort-controller';
 
 import { ApiError } from 'app/common/ApiError';
+import { SHARE_KEY_PREFIX } from 'app/common/gristUrls';
 import { removeTrailingSlash } from 'app/common/gutil';
-import { HomeDBManager } from "app/gen-server/lib/HomeDBManager";
+import { HomeDBManager } from "app/gen-server/lib/homedb/HomeDBManager";
 import { assertAccess, getOrSetDocAuth, getTransitiveHeaders, RequestWithLogin } from 'app/server/lib/Authorizer';
 import { IDocWorkerMap } from "app/server/lib/DocWorkerMap";
 import { expressWrap } from "app/server/lib/expressWrap";
@@ -33,6 +34,13 @@ export class DocApiForwarder {
   }
 
   public addEndpoints(app: express.Application) {
+    app.use((req, res, next) => {
+      if (req.url.startsWith('/api/s/')) {
+        req.url = req.url.replace('/api/s/', `/api/docs/${SHARE_KEY_PREFIX}`);
+      }
+      next();
+    });
+
     // Middleware to forward a request about an existing document that user has access to.
     // We do not check whether the document has been soft-deleted; that will be checked by
     // the worker if needed.
@@ -61,6 +69,16 @@ export class DocApiForwarder {
     app.use('/api/docs/:docId/webhooks/queue', withDoc);
     app.use('/api/docs/:docId/webhooks', withDoc);
     app.use('/api/docs/:docId/assistant', withDoc);
+    app.use('/api/docs/:docId/sql', withDoc);
+    app.use('/api/docs/:docId/timing', withDoc);
+    app.use('/api/docs/:docId/timing/start', withDoc);
+    app.use('/api/docs/:docId/timing/stop', withDoc);
+    app.use('/api/docs/:docId/forms/:vsId', withDoc);
+    app.use('/api/docs/:docId/attachments/transferStatus', withDoc);
+    app.use('/api/docs/:docId/attachments/transferAll', withDoc);
+    app.use('/api/docs/:docId/attachments/store', withDoc);
+    app.use('/api/docs/:docId/attachments/stores', withDoc);
+
     app.use('^/api/docs$', withoutDoc);
   }
 
@@ -91,7 +109,11 @@ export class DocApiForwarder {
     url.pathname = removeTrailingSlash(docWorkerUrl.pathname) + url.pathname;
 
     const headers: {[key: string]: string} = {
-      ...getTransitiveHeaders(req),
+      // At this point, we have already checked and trusted the origin of the request.
+      // See FlexServer#addApiMiddleware(). So don't include the "Origin" header.
+      // Including this header also would break features like form submissions,
+      // as the "Host" header is not retrieved when calling getTransitiveHeaders().
+      ...getTransitiveHeaders(req, { includeOrigin: false }),
       'Content-Type': req.get('Content-Type') || 'application/json',
     };
     for (const key of ['X-Sort', 'X-Limit']) {

@@ -36,6 +36,7 @@ import sandbox
 import schema
 from schema import RecalcWhen
 import table as table_module
+from timing import DummyTiming
 from user import User # pylint:disable=wrong-import-order
 import useractions
 import column
@@ -263,6 +264,8 @@ class Engine(object):
     # make multiple different requests without needing to keep all the responses in memory.
     self._cached_request_keys = set()
 
+    self._timing = DummyTiming()
+
   @property
   def autocomplete_context(self):
     # See the comment on _autocomplete_context in __init__ above.
@@ -388,9 +391,27 @@ class Engine(object):
 
     query_cols = []
     if query:
-      query_cols = [(table.get_column(col_id), values) for (col_id, values) in six.iteritems(query)]
-    row_ids = [r for r in table.row_ids
-               if all((c.raw_get(r) in values) for (c, values) in query_cols)]
+      for col_id, values in six.iteritems(query):
+        col = table.get_column(col_id)
+        try:
+          # Try to use a set for speed.
+          values = set(values)
+        except TypeError:
+          # Values contains an unhashable value, leave it as a list.
+          pass
+        query_cols.append((col, values))
+    row_ids = []
+    for r in table.row_ids:
+      for (c, values) in query_cols:
+        try:
+          if c.raw_get(r) not in values:
+            break
+        except TypeError:
+          # values is a set but c.raw_get(r) is unhashable, so it's definitely not in values
+          break
+      else:
+        # No break, i.e. all columns matched
+        row_ids.append(r)
 
     for c in six.itervalues(table.all_columns):
       # pylint: disable=too-many-boolean-expressions
@@ -486,9 +507,11 @@ class Engine(object):
     if col_parent_ids > valid_table_refs:
       collist = sorted(actions.transpose_bulk_action(meta_columns),
                        key=lambda c: (c.parentId, c.parentPos))
+      reverse_col_id = schema.get_reverse_col_id_lookup_func(collist)
       raise AssertionError("Internal schema inconsistent; extra columns in metadata:\n"
           + "\n".join('  #%s %s' %
-                      (c.id, schema.SchemaColumn(c.colId, c.type, bool(c.isFormula), c.formula))
+                      (c.id, schema.SchemaColumn(c.colId, c.type, bool(c.isFormula), c.formula,
+                        reverse_col_id(c)))
                       for c in collist if c.parentId not in valid_table_refs))
 
   def dump_state(self):
@@ -951,51 +974,53 @@ class Engine(object):
       assert not cycle
       record = AttributeRecorder(record, "rec", record_attributes)
     value = None
-    try:
-      if cycle:
-        raise depend.CircularRefError("Circular Reference")
-      if not col.is_formula():
-        value = col.get_cell_value(int(record), restore=True)
-        with FakeStdStreams():
-          result = col.method(record, table.user_table, value, self._user)
-      else:
-        with FakeStdStreams():
-          result = col.method(record, table.user_table)
-      if self._cell_required_error:
-        raise self._cell_required_error  # pylint: disable=raising-bad-type
-      self.formula_tracer(col, record)
-      return result
-    except MemoryError:
-      # Don't try to wrap memory errors.
-      raise
-    except:  # pylint: disable=bare-except
-      # Since col.method runs untrusted user code, we use a bare except to catch all
-      # exceptions (even those not derived from BaseException).
+    with self._timing.measure(col.node):
+      try:
+        if cycle:
+          raise depend.CircularRefError("Circular Reference")
+        if not col.is_formula():
+          value = col.get_cell_value(int(record), restore=True)
+          with FakeStdStreams():
+            result = col.method(record, table.user_table, value, self._user)
+        else:
+          with FakeStdStreams():
+            result = col.method(record, table.user_table)
+        if self._cell_required_error:
+          raise self._cell_required_error  # pylint: disable=raising-bad-type
+        self.formula_tracer(col, record)
+        return result
+      except MemoryError:
+        # Don't try to wrap memory errors.
+        raise
+      except:  # pylint: disable=bare-except
+        # Since col.method runs untrusted user code, we use a bare except to catch all
+        # exceptions (even those not derived from BaseException).
 
-      # Before storing the exception value, make sure there isn't an OrderError pending.
-      # If there is, we will raise it after undoing any side effects.
-      order_error = self._cell_required_error
+        # Before storing the exception value, make sure there isn't an OrderError pending.
+        # If there is, we will raise it after undoing any side effects.
+        order_error = self._cell_required_error
 
-      # Otherwise, we use sys.exc_info to recover the raised exception object.
-      regular_error = sys.exc_info()[1] if not order_error else None
+        # Otherwise, we use sys.exc_info to recover the raised exception object.
+        regular_error = sys.exc_info()[1] if not order_error else None
 
-      # It is possible for formula evaluation to have side-effects that produce DocActions (e.g.
-      # lookupOrAddDerived() creates those). If there is an error, undo any such side-effects.
-      self._undo_to_checkpoint(checkpoint)
+        # It is possible for formula evaluation to have side-effects that produce DocActions (e.g.
+        # lookupOrAddDerived() creates those). If there is an error, undo any such side-effects.
+        self._undo_to_checkpoint(checkpoint)
 
-      # Now we can raise the order error, if there was one.  Cell evaluation will be reordered
-      # in response.
-      if order_error:
-        self._cell_required_error = None
-        raise order_error  # pylint: disable=raising-bad-type
+        # Now we can raise the order error, if there was one.  Cell evaluation will be reordered
+        # in response.
+        if order_error:
+          self._timing.mark("order_error")
+          self._cell_required_error = None
+          raise order_error  # pylint: disable=raising-bad-type
 
-      self.formula_tracer(col, record)
+        self.formula_tracer(col, record)
 
-      include_details = (node not in self._is_node_exception_reported) if node else True
-      if not col.is_formula():
-        return objtypes.RaisedException(regular_error, include_details, user_input=value)
-      else:
-        return objtypes.RaisedException(regular_error, include_details)
+        include_details = (node not in self._is_node_exception_reported) if node else True
+        if not col.is_formula():
+          return objtypes.RaisedException(regular_error, include_details, user_input=value)
+        else:
+          return objtypes.RaisedException(regular_error, include_details)
 
   def convert_action_values(self, action):
     """
@@ -1012,11 +1037,9 @@ class Engine(object):
 
       # If there are values for any PositionNumber columns, ensure PositionNumbers are ordered as
       # intended but are all unique, which may require updating other positions.
-      nvalues, adjustments = col_obj.prepare_new_values(values,
+      nvalues, adjustments = col_obj.prepare_new_values(row_ids, values,
           action_summary=self.out_actions.summary)
-      if adjustments:
-        extra_actions.append(actions.BulkUpdateRecord(
-          action.table_id, [r for r,v in adjustments], {col_id: [v for r,v in adjustments]}))
+      extra_actions.extend(adjustments)
 
       new_values[col_id] = nvalues
 
@@ -1031,11 +1054,10 @@ class Engine(object):
         defaults = [col_obj.getdefault() for r in row_ids]
         # We use defaults to get new values or adjustments. If we are replacing data, we'll make
         # the adjustments without regard to the existing data.
-        nvalues, adjustments = col_obj.prepare_new_values(defaults, ignore_data=ignore_data,
+        nvalues, adjustments = col_obj.prepare_new_values(row_ids, defaults,
+            ignore_data=ignore_data,
             action_summary=self.out_actions.summary)
-        if adjustments:
-          extra_actions.append(actions.BulkUpdateRecord(
-            action.table_id, [r for r,v in adjustments], {col_id: [v for r,v in adjustments]}))
+        extra_actions.extend(adjustments)
         if nvalues != defaults:
           new_values[col_id] = nvalues
 

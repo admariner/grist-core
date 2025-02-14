@@ -153,10 +153,10 @@ describe("NumberParse", function() {
     check("  123 456 789,123", 123456789.123);  // normal space
     check("  123 456 789,123", 123456789.123);  // NBSP
 
-    formatter = Intl.NumberFormat("en-ZA", {useGrouping: true});
+    formatter = Intl.NumberFormat("af-ZA", {useGrouping: true});
     assert.equal(formatter.format(123456789.123), '123 456 789,123');
 
-    parser = new NumberParse("en-ZA", "ZAR");
+    parser = new NumberParse("af-ZA", "ZAR");
 
     assert.equal(parser.digitGroupSeparator, " ");
     assert.equal(parser.digitGroupSeparatorCurrency, " ");
@@ -230,7 +230,7 @@ describe("NumberParse", function() {
     assert.deepEqual(parser.guessOptions(["$1"]), {numMode: "currency", decimals: 0});
     assert.deepEqual(parser.guessOptions(["$1.2"]), {numMode: "currency", decimals: 0});
     assert.deepEqual(parser.guessOptions(["$1.23"]), {numMode: "currency"});
-    assert.deepEqual(parser.guessOptions(["$1.234"]), {numMode: "currency"});
+    assert.deepEqual(parser.guessOptions(["$1.234"]), {numMode: "currency", maxDecimals: 3});
 
     // Otherwise decimal places are guessed based on trailing zeroes
     assert.deepEqual(parser.guessOptions(["$1.0"]), {numMode: "currency", decimals: 1});

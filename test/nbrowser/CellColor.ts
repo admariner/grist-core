@@ -5,6 +5,7 @@ import { setupTestSuite } from 'test/nbrowser/testUtils';
 
 describe('CellColor', function() {
   this.timeout(20000);
+  gu.bigScreen();
   const cleanup = setupTestSuite();
   let doc: string;
 
@@ -124,8 +125,7 @@ describe('CellColor', function() {
     await gu.getSection('TABLE1').click();
     let cell = await gu.getCell('B', 1).doClick();
     await gu.enterCell('foo');
-    await driver.findContent('.test-select-button', /HyperLink/).click();
-    await gu.waitForServer();
+    await gu.setFieldWidgetType('HyperLink');
 
     // check default color of hyperlink
     cell = await gu.getCell('B', 1).find('.field_clip');
@@ -152,7 +152,7 @@ describe('CellColor', function() {
     const forkId = await gu.getCurrentUrlId();
 
     // Compare with the original
-    await mainSession.loadDoc(`/doc/${doc}?compare=${forkId}`);
+    await mainSession.loadDoc(`/doc/${doc}?compare=${forkId}`, {skipAlert: true});
 
     // check that colors for diffing cells are ok
     cell = gu.getCell('A', 1).find('.field_clip');
@@ -218,8 +218,7 @@ describe('CellColor', function() {
     await gu.getSection('TABLE1').click();
 
     // change widget to hyper link
-    await driver.findContent('.test-select-button', /HyperLink/).click();
-    await gu.waitForServer();
+    await gu.setFieldWidgetType('HyperLink');
     const cell = gu.getCell('A', 1).find('.field_clip');
 
     // check cell show hyperlink
@@ -449,8 +448,7 @@ describe('CellColor', function() {
     await gu.waitForServer();
 
     // change format to hyperlink
-    await driver.findContent('.test-select-button', /HyperLink/).click();
-    await gu.waitForServer();
+    await gu.setFieldWidgetType('HyperLink');
 
     // check color is still ok
     cell = gu.getCell('A', 1).find('.field_clip');
@@ -458,9 +456,14 @@ describe('CellColor', function() {
     assert.equal(await cell.getCssValue('background-color'), 'rgba(0, 0, 255, 1)');
   });
 
+  const toggleDefaultColor = 'rgba(96, 96, 96, 1)';
+  const switchDefaultColor = 'rgba(44, 176, 175, 1)';
+  const getPickerCurrentTextColor = () => driver.find('.test-text-color-square').getCssValue('background-color');
+
   it('should handle correctly default text color', async function() {
     // Create new checkbox column
     await driver.find('.mod-add-column').click();
+    await driver.find('.test-new-columns-menu-add-new').click();
     await gu.waitForServer();
     await gu.setType(/Toggle/);
 
@@ -468,7 +471,8 @@ describe('CellColor', function() {
     await gu.openCellColorPicker();
 
     // check color preview is correct
-    assert.equal(await driver.find('.test-text-hex').value(), '#606060');
+    assert.equal(await driver.find('.test-text-hex').value(), 'default');
+    assert.equal(await getPickerCurrentTextColor(), toggleDefaultColor);
 
     // close color picker
     await driver.sendKeys(Key.ENTER);
@@ -482,10 +486,40 @@ describe('CellColor', function() {
     await gu.openCellColorPicker();
 
     // check color preview is correct
-    assert.equal(await driver.find('.test-text-hex').value(), '#2CB0AF');
+    assert.equal(await driver.find('.test-text-hex').value(), 'default');
+    assert.equal(await getPickerCurrentTextColor(), switchDefaultColor);
 
     // close picker
     await driver.sendKeys(Key.ESCAPE);
+  });
+
+  it('should allow reverting to default text color', async function() {
+    // Continuing on the previous test case, change Switch widget from default to an explicit color.
+    await gu.openCellColorPicker();
+    assert.equal(await driver.find('.test-text-hex').value(), 'default');
+    assert.equal(await getPickerCurrentTextColor(), switchDefaultColor);
+    await gu.setTextColor('rgb(255, 0, 0)');
+    assert.equal(await driver.find('.test-text-hex').value(), '#FF0000');
+    assert.equal(await getPickerCurrentTextColor(), 'rgba(255, 0, 0, 1)');
+    await driver.sendKeys(Key.ENTER);
+    await gu.waitForServer();
+
+    // Change widget to Toggle
+    await driver.find('.test-fbuilder-widget-select').click();
+    await driver.findContent('.test-select-row', /CheckBox/).click();
+    await gu.waitForServer();
+
+    // Check the saved color applies.
+    await gu.openCellColorPicker();
+    assert.equal(await driver.find('.test-text-hex').value(), '#FF0000');
+    assert.equal(await getPickerCurrentTextColor(), 'rgba(255, 0, 0, 1)');
+
+    // Revert to default; the new widget has a different default.
+    await driver.find('.test-text-empty').click();
+    assert.equal(await driver.find('.test-text-hex').value(), 'default');
+    assert.equal(await getPickerCurrentTextColor(), toggleDefaultColor);
+    await driver.sendKeys(Key.ENTER);
+    await gu.waitForServer();
   });
 
   it('should not save default color', async function() {
@@ -493,8 +527,13 @@ describe('CellColor', function() {
 
     // create a new checkbox column
     await driver.find('.mod-add-column').click();
+    await driver.find('.test-new-columns-menu-add-new').click();
+
     await gu.waitForServer();
     await gu.setType(/Toggle/);
+
+    // make sure the view pane is scrolled all the way left
+    await gu.sendKeys(Key.ARROW_LEFT);
 
     // enter 'true'
     await gu.getCell('E', 1).click();

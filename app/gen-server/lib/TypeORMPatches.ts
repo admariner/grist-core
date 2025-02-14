@@ -25,6 +25,8 @@ import {
 } from 'typeorm/error/QueryRunnerProviderAlreadyReleasedError';
 import {QueryBuilder} from 'typeorm/query-builder/QueryBuilder';
 
+// Print a warning for transactions that take longer than this.
+const SLOW_TRANSACTION_MS = 5000;
 
 /**********************
  * Patch 1
@@ -103,9 +105,21 @@ export function applyPatch() {
       async function runOrRollback() {
         try {
           await queryRunner.startTransaction();
-          const result = await runInTransaction(queryRunner.manager);
-          await queryRunner.commitTransaction();
-          return result;
+
+          const start = Date.now();
+
+          const timer = setInterval(() => {
+            const timeMs = Date.now() - start;
+            log.warn(`TypeORM transaction slow: [${arg1} ${arg2}]`, {timeMs});
+          }, SLOW_TRANSACTION_MS);
+
+          try {
+            const result = await runInTransaction(queryRunner.manager);
+            await queryRunner.commitTransaction();
+            return result;
+          } finally {
+            clearInterval(timer);
+          }
         } catch (err) {
           log.debug(`TypeORM transaction error [${arg1} ${arg2}] - ${err}`);
           try {
@@ -180,6 +194,13 @@ async function callWithRetry<T>(op: () => Promise<T>, options: {
  * Patch 2
  **********************/
 
+// Augment the interface globally
+declare module 'typeorm/query-builder/QueryBuilder' {
+  interface QueryBuilder<Entity> {
+    chain<Q extends QueryBuilder<Entity>>(this: Q, callback: (qb: Q) => Q): Q
+  }
+}
+
 abstract class QueryBuilderPatched<T> extends QueryBuilder<T> {
   public setParameter(key: string, value: any): this {
     const prev = this.expressionMap.parameters[key];
@@ -189,6 +210,18 @@ abstract class QueryBuilderPatched<T> extends QueryBuilder<T> {
     this.expressionMap.parameters[key] = value;
     return this;
   }
+
+  /**
+   * A very simple helper to neater code organization. For instance, instead of
+   *    qb = myFunc(qb.foo().bar());
+   * You can do
+   *    qb = qb.foo().bar().chain(myFunc).baz();
+   * This way the order in which myFunc is applied is clearer.
+   */
+  public chain<Q extends QueryBuilder<T>>(this: Q, callback: (qb: Q) => Q): Q {
+    return callback(this);
+  }
 }
 
 (QueryBuilder.prototype as any).setParameter = (QueryBuilderPatched.prototype as any).setParameter;
+(QueryBuilder.prototype as any).chain = (QueryBuilderPatched.prototype as any).chain;

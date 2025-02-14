@@ -1,34 +1,36 @@
 import {FlexServer} from 'app/server/lib/FlexServer';
+import {GristServer} from 'app/server/lib/GristServer';
 import log from 'app/server/lib/log';
 import {PluginManager} from 'app/server/lib/PluginManager';
 import * as express from 'express';
 import * as mimeTypes from 'mime-types';
 import * as path from 'path';
 
-// Get the url where plugin material should be served from.
-export function getUntrustedContentOrigin(): string|undefined {
-  return process.env.APP_UNTRUSTED_URL;
-}
-
 // Get the host serving plugin material
-export function getUntrustedContentHost(): string|undefined {
-  const origin = getUntrustedContentOrigin();
+export function getUntrustedContentHost(origin: string|undefined): string|undefined {
   if (!origin) { return; }
   return new URL(origin).host;
 }
 
 // Add plugin endpoints to be served on untrusted host
 export function addPluginEndpoints(server: FlexServer, pluginManager: PluginManager) {
-  const host = getUntrustedContentHost();
-  if (host) {
+  if (server.servesPlugins()) {
     server.app.get(/^\/plugins\/(installed|builtIn)\/([^/]+)\/(.+)/, (req, res) =>
-                   servePluginContent(req, res, pluginManager, host));
+                   servePluginContent(req, res, pluginManager, server));
   }
 }
 
 // Serve content for plugins with various checks that it is being accessed as we expect.
 function servePluginContent(req: express.Request, res: express.Response,
-                            pluginManager: PluginManager, untrustedContentHost: string) {
+                            pluginManager: PluginManager,
+                            gristServer: GristServer) {
+  const pluginUrl = gristServer.getPluginUrl();
+  const untrustedContentHost = getUntrustedContentHost(pluginUrl);
+  if (!untrustedContentHost) {
+    // not expected
+    throw new Error('plugin host unexpectedly not set');
+  }
+
   const pluginKind = req.params[0];
   const pluginId = req.params[1];
   const pluginPath = req.params[2];
@@ -44,7 +46,8 @@ function servePluginContent(req: express.Request, res: express.Response,
       req.get('X-From-Plugin-WebView') === "true" ||
       mimeTypes.lookup(path.extname(pluginPath)) === "application/javascript") {
     const dirs = pluginManager.dirs();
-    const contentRoot = pluginKind === "installed" ? dirs.installed : dirs.builtIn;
+    const contentRoot = pluginKind === "installed" ? dirs.installed :
+        (pluginKind === "builtIn" ? dirs.builtIn : dirs.bundled);
     // Note that pluginPath may not be safe, but `sendFile` with the "root" option restricts
     // relative paths to be within the root folder (see the 3rd party library unit-test:
     // https://github.com/pillarjs/send/blob/3daa901cf731b86187e4449fa2c52f971e0b3dbc/test/send.js#L1363)
@@ -56,9 +59,11 @@ function servePluginContent(req: express.Request, res: express.Response,
 }
 
 // Middleware to restrict some assets to untrusted host.
-export function limitToPlugins(handler: express.RequestHandler) {
-  const host = getUntrustedContentHost();
+export function limitToPlugins(gristServer: GristServer,
+                               handler: express.RequestHandler) {
   return function(req: express.Request, resp: express.Response, next: express.NextFunction) {
+    const pluginUrl = gristServer.getPluginUrl();
+    const host = getUntrustedContentHost(pluginUrl);
     if (!host) { return next(); }
     if (matchHost(req.get('host'), host) || req.get('X-From-Plugin-WebView') === "true") {
       return handler(req, resp, next);

@@ -42,12 +42,22 @@ interface LinkNode {
   // is the table a summary table
   isSummary: boolean;
 
+  // does this node involve an "Attachments" column. Can be tricky if Attachments is one of groupby cols
+  isAttachments: boolean;
+
   // For a summary table, the set of col refs of the groupby columns of the underlying table
   groupbyColumns?: Set<number>;
 
   // list of ids of the sections that are ancestors to this section according to the linked section
-  // relationship
-  ancestors: Set<number>;
+  // relationship. ancestors[0] is this.section, ancestors[length-1] is oldest ancestor
+  ancestors: number[];
+
+  // For bidirectional linking, cycles are only allowed if all links on that cycle are same-table cursor-link
+  // this.ancestors only records what the ancestors are, but we need to record info about the edges between them.
+  // isAncCursLink[i]==true  means the link from ancestors[i] to ancestors[i+1] is a same-table cursor-link
+  // NOTE: (Since ancestors is a list of nodes, and this is a list of the edges between those nodes, this list will
+  //        be 1 shorter than ancestors (if there's no cycle), or will be the same length (if there is a cycle))
+  isAncestorSameTableCursorLink: boolean[];
 
   // the section record. Must be the empty record sections that are to be created.
   section: ViewSectionRec;
@@ -114,6 +124,12 @@ function isValidLink(source: LinkNode, target: LinkNode) {
     return false;
   }
 
+  //cannot select from attachments, even though they're implemented as reflists
+  if (source.isAttachments || target.isAttachments) {
+    return false;
+  }
+
+
   // cannot select from chart
   if (source.widgetType === 'chart') {
     return false;
@@ -127,14 +143,61 @@ function isValidLink(source: LinkNode, target: LinkNode) {
     }
 
     // custom widget must allow select by
-    if (!source.section.allowSelectBy.get()) {
+    if (!source.section.allowSelectBy()) {
       return false;
     }
   }
 
-  // The link must not create a cycle
-  if (source.ancestors.has(target.section.getRowId())) {
-    return false;
+  // The link must not create a cycle, unless it's only same-table cursor-links all the way to target
+  if (source.ancestors.includes(target.section.getRowId())) {
+
+    // cycles only allowed for cursor links
+    if (source.column || target.column || source.isSummary) {
+      return false;
+    }
+
+    // If one of the section has custom row filter, we can't make cycles.
+    if (target.section.selectedRowsActive()) {
+      return false;
+    }
+
+    // We know our ancestors cycle back around to ourselves
+    // - lets walk back along the cyclic portion of the ancestor chain and verify that each link in that chain is
+    //   a cursor-link
+
+    // e.g. if the current link graph is:
+    //                     A->B->TGT->C->D->SRC
+    //    (SRC.ancestors):[5][4] [3] [2][1] [0]
+    // We're verifying the new potential link SRC->TGT, which would turn the graph into:
+    //             [from SRC] -> TGT -> C -> D -> SRC -> [to TGT]
+    // (Note that A and B will be cut away, since we change TGT's link source)
+    //
+    // We need to make sure that each link going backwards from `TGT -> C -> D -> SRC` is a same-table-cursor-link,
+    // since we disallow cycles with other kinds of links.
+    // isAncestorCursorLink[i] will tell us if the link going into ancestors[i] is a same-table-cursor-link
+    // So before we step from i=0 (SRC) to i=1 (D), we check isAncestorCursorLink[0], which tells us about D->SRC
+    let i;
+    for (i = 0; i < source.ancestors.length; i++) { // Walk backwards through the ancestors
+
+      // Once we hit the target section, we've seen all links that will be part of the cycle, and they've all been valid
+      if (source.ancestors[i] == target.section.getRowId()) {
+        break; // Success!
+      }
+
+      // Check that the link to the preceding section is valid
+      // NOTE! isAncestorSameTableCursorLink could be 1 shorter than ancestors!
+      // (e.g. if the graph looks like A->B->C, there's 3 ancestors but only two links)
+      // (however, if there's already a cycle, they'll be the same length ( [from C]->A->B->C, 3 ancestors & 3 links)
+      // If the link doesn't exist (shouldn't happen?) OR the link is not same-table-cursor, the cycle is invalid
+      if (i >= source.isAncestorSameTableCursorLink.length ||
+          !source.isAncestorSameTableCursorLink[i]) { return false; }
+    }
+
+    // If we've hit the last ancestor and haven't found target, error out (shouldn't happen!, we checked for it)
+    if (i == source.ancestors.length) { throw Error("Array doesn't include targetSection"); }
+
+
+    // Yay, this is a valid cycle of same-table cursor-links
   }
 
   return true;
@@ -215,24 +278,41 @@ function fromViewSectionRec(section: ViewSectionRec): LinkNode[] {
     return [];
   }
   const table = section.table.peek();
-  const ancestors = new Set<number>();
+  const ancestors: number[] = [];
+
+  const isAncestorSameTableCursorLink: boolean[] = [];
 
   for (let sec = section; sec.getRowId(); sec = sec.linkSrcSection.peek()) {
-    if (ancestors.has(sec.getRowId())) {
-      // tslint:disable-next-line:no-console
-      console.warn(`Links should not create a cycle - section ids: ${Array.from(ancestors)}`);
+    if (ancestors.includes(sec.getRowId())) {
+      // There's a cycle in the existing link graph
+      // TODO if we're feeling fancy, can test here whether it's an all-same-table cycle and warn if not
+      //      but there's other places we check for that
       break;
     }
-    ancestors.add(sec.getRowId());
+    ancestors.push(sec.getRowId());
+
+    //Determine if this link is a same-table cursor link
+    if (sec.linkSrcSection.peek().getRowId()) { // if sec has incoming link
+      const srcCol = sec.linkSrcCol.peek().getRowId();
+      const tgtCol = sec.linkTargetCol.peek().getRowId();
+      const srcTable = sec.linkSrcSection.peek().table.peek();
+      const srcIsSummary = srcTable.primaryTableId.peek() !== srcTable.tableId.peek();
+      isAncestorSameTableCursorLink.push(srcCol === 0 && tgtCol === 0 && !srcIsSummary);
+    }
+    // NOTE: isAncestorSameTableCursorLink may be 1 shorter than ancestors, since we might skip pushing
+    // when we hit the last ancestor (which has no incoming link)
+    // however if we have a cycle (of cursor-links), then they'll be the same length, because we won't skip last push
   }
 
   const isSummary = table.primaryTableId.peek() !== table.tableId.peek();
   const mainNode: LinkNode = {
     tableId: table.primaryTableId.peek(),
     isSummary,
+    isAttachments: isSummary && table.groupByColumns.peek().some(col => col.type.peek() == "Attachments"),
     groupbyColumns: isSummary ? table.summarySourceColRefs.peek() : undefined,
     widgetType: section.parentKey.peek(),
     ancestors,
+    isAncestorSameTableCursorLink,
     section,
   };
 
@@ -266,9 +346,12 @@ function fromPageWidget(docModel: DocModel, pageWidget: IPageWidget): LinkNode[]
   const mainNode: LinkNode = {
     tableId: table.primaryTableId.peek(),
     isSummary,
+    isAttachments: false, // hmm, we should need a check here in case attachments col is on the main-node link
+    // (e.g.: link from summary table with Attachments in group-by) but it seems to work fine as is
     groupbyColumns,
     widgetType: pageWidget.type,
-    ancestors: new Set(),
+    ancestors: [],
+    isAncestorSameTableCursorLink: [],
     section: docModel.viewSections.getRowModel(pageWidget.section),
   };
 
@@ -284,7 +367,7 @@ function fromColumns(table: TableRec, mainNode: LinkNode, tableExists: boolean =
     }
     const tableId = getReferencedTableId(column.type.peek());
     if (tableId) {
-      nodes.push({...mainNode, tableId, column});
+      nodes.push({...mainNode, tableId, column, isAttachments: column.type.peek() == "Attachments"});
     }
   }
   return nodes;
@@ -348,6 +431,18 @@ export class LinkConfig {
         assert(srcTableId, "srcCol not a valid reference");
       }
       assert(srcTableId === tgtTableId, "mismatched tableIds");
+
+      // If this section has a custom link filter, it can't create cycles.
+      if (this.tgtSection.selectedRowsActive()) {
+        // Make sure we don't have a cycle.
+        let src = this.tgtSection.linkSrcSection();
+        while (!src.isDisposed() && src.getRowId()) {
+          assert(src.getRowId() !== this.srcSection.getRowId(),
+            "Sections with filter linking can't be part of a cycle (same record linking)'");
+          src = src.linkSrcSection();
+        }
+      }
+
     } catch (e) {
       throw new Error(`LinkConfig invalid: ` +
         `${this.srcSection.getRowId()}:${this.srcCol?.getRowId()}[${srcTableId}] -> ` +

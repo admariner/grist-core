@@ -5,6 +5,7 @@ import {server, setupTestSuite} from 'test/nbrowser/testUtils';
 
 describe('ReferenceColumns', function() {
   this.timeout(20000);
+  gu.bigScreen();
   let session: Session;
   const cleanup = setupTestSuite({team: true});
 
@@ -20,6 +21,7 @@ describe('ReferenceColumns', function() {
     it('should render Row ID values as TableId[RowId]', async function() {
       await driver.find('.test-right-tab-field').click();
       await driver.find('.mod-add-column').click();
+      await driver.findWait('.test-new-columns-menu-add-new', 100).click();
       await gu.waitForServer();
       await gu.setType(/Reference/);
       await gu.waitForServer();
@@ -163,7 +165,8 @@ describe('ReferenceColumns', function() {
     it('should open to correct item selected, and leave it unchanged on Enter', async function() {
       const checkRefCell = stackWrapFunc(async (col: string, rowNum: number, expValue: string) => {
         // Click cell and open for editing.
-        const cell = await gu.getCell({section: 'References', col, rowNum}).doClick();
+        const cell = await gu.getCell({section: 'References', col, rowNum})
+          .find('.test-ref-text').doClick();
         assert.equal(await cell.getText(), expValue);
         await driver.sendKeys(Key.ENTER);
         // Wait for expected value to appear in the list; check that it's selected.
@@ -292,6 +295,10 @@ describe('ReferenceColumns', function() {
       assert.equal(await driver.find('.celleditor_text_editor').value(), 'da');
       assert.equal(await driver.find('.test-ref-editor-item.selected').isPresent(), false);
 
+      // Clear the typed-in text temporarily. Something changed in a recent version of Chrome,
+      // causing the wrong item to be moused over below when the "Add New" option is visible.
+      await driver.sendKeys(Key.BACK_SPACE, Key.BACK_SPACE);
+
       // Mouse over an item.
       await driver.findContent('.test-ref-editor-item', /Dark Gray/).mouseMove();
       assert.equal(await driver.find('.celleditor_text_editor').value(), 'Dark Gray');
@@ -299,10 +306,11 @@ describe('ReferenceColumns', function() {
 
       // Mouse back out of the dropdown
       await driver.find('.celleditor_text_editor').mouseMove();
-      assert.equal(await driver.find('.celleditor_text_editor').value(), 'da');
+      assert.equal(await driver.find('.celleditor_text_editor').value(), '');
       assert.equal(await driver.find('.test-ref-editor-item.selected').isPresent(), false);
 
-      // Click away to save the typed-in text.
+      // Re-enter the typed-in text and click away to save it.
+      await driver.sendKeys('da', Key.UP);
       await gu.getCell({section: 'References', col: 'Color', rowNum: 1}).doClick();
       await gu.waitForServer();
       assert.equal(await cell.getText(), "da");
@@ -452,7 +460,8 @@ describe('ReferenceColumns', function() {
     });
 
     it('should update choices as user types into textbox', async function() {
-      let cell = await gu.getCell({section: 'References', col: 'School', rowNum: 1}).doClick();
+      let cell = await gu.getCell({section: 'References', col: 'School', rowNum: 1})
+        .find('.test-ref-text').doClick();
       assert.equal(await cell.getText(), 'TECHNOLOGY, ARTS AND SCIENCES STUDIO');
       await driver.sendKeys(Key.ENTER);
       assert.deepEqual(await getACOptions(3), [
@@ -492,7 +501,8 @@ describe('ReferenceColumns', function() {
     it('should highlight matching parts of items', async function() {
       await driver.sendKeys(Key.HOME);
 
-      let cell = await gu.getCell({section: 'References', col: 'Color', rowNum: 2}).doClick();
+      let cell = await gu.getCell({section: 'References', col: 'Color', rowNum: 2})
+        .find('.test-ref-text').doClick();
       assert.equal(await cell.getText(), 'Red');
       await driver.sendKeys(Key.ENTER);
       await driver.findWait('.test-ref-editor-item', 1000);
@@ -504,7 +514,8 @@ describe('ReferenceColumns', function() {
         ['Re']);
       await driver.sendKeys(Key.ESCAPE);
 
-      cell = await gu.getCell({section: 'References', col: 'School', rowNum: 1}).doClick();
+      cell = await gu.getCell({section: 'References', col: 'School', rowNum: 1})
+        .find('.test-ref-text').doClick();
       await driver.sendKeys('br tech');
       assert.deepEqual(
         await driver.findContentWait('.test-ref-editor-item', /BROOKLYN TECH/, 1000).findAll('span', e => e.getText()),

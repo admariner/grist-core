@@ -8,8 +8,10 @@ export interface Webhook {
 
 export interface WebhookFields {
   url: string;
+  authorization?: string;
   eventTypes: Array<"add"|"update">;
   tableId: string;
+  watchedColIds?: string[];
   enabled?: boolean;
   isReadyColumn?: string|null;
   name?: string;
@@ -25,7 +27,9 @@ export type WebhookStatus = 'idle'|'sending'|'retrying'|'postponed'|'error'|'inv
 // tableId from the url) but generics are not yet supported by ts-interface-builder
 export interface WebhookSubscribe {
   url: string;
+  authorization?: string;
   eventTypes: Array<"add"|"update">;
+  watchedColIds?: string[];
   enabled?: boolean;
   isReadyColumn?: string|null;
   name?: string;
@@ -40,10 +44,12 @@ export interface WebhookSummary {
   id: string;
   fields: {
     url: string;
+    authorization?: string;
     unsubscribeKey: string;
     eventTypes: string[];
     isReadyColumn: string|null;
     tableId: string;
+    watchedColIds?: string[];
     enabled: boolean;
     name: string;
     memo: string;
@@ -61,8 +67,10 @@ export interface WebhookUpdate {
 // ts-interface-builder
 export interface WebhookPatch {
   url?: string;
+  authorization?: string;
   eventTypes?: Array<"add"|"update">;
   tableId?: string;
+  watchedColIds?: string[];
   enabled?: boolean;
   isReadyColumn?: string|null;
   name?: string;

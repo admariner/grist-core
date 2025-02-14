@@ -111,10 +111,9 @@ describe('Views.ntest', function() {
     // Reference: https://phab.getgrist.com/T327
     await gu.actions.addNewSection('New', 'Table');
     await gu.waitForServer();
-    await gu.getSection('TABLE4').click();
+    await gu.actions.viewSection('TABLE4').selectSection();
     // Delete the section
-    await gu.actions.viewSection('TABLE4').selectMenuOption('viewLayout', 'Delete widget');
-    await gu.waitForServer();
+    await gu.deleteWidgetWithData('TABLE4');
     // Assert that the default section (Table1 record) is now active.
     assert.equal(await $('.active_section > .viewsection_title').text(), 'TABLE1');
     // Assert that focus is returned to the deleted section on undo.

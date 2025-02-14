@@ -44,7 +44,7 @@ describe('SafeBrowser', function() {
 
     browserProcesses = [];
     sandbox.stub(SafeBrowser, 'createWorker').callsFake(createProcess);
-    sandbox.stub(SafeBrowser, 'createView').callsFake(createProcess);
+    sandbox.stub(SafeBrowser, 'createView').callsFake(createProcess as any);
     sandbox.stub(PluginInstance.prototype, 'getRenderTarget').returns(noop);
     disposeSpy = sandbox.spy(Disposable.prototype, 'dispose');
   });
@@ -180,7 +180,13 @@ describe('SafeBrowser', function() {
   };
   function createSafeBrowser(mainPath: string): {safeBrowser: SafeBrowser, pluginRpc: Rpc} {
     const pluginInstance = new PluginInstance(localPlugin, {});
-    const safeBrowser = new SafeBrowser(pluginInstance, clientScope, '', mainPath, {});
+    const safeBrowser = new SafeBrowser({
+      pluginInstance,
+      clientScope,
+      untrustedContentOrigin: '',
+      mainPath,
+      baseLogger: {},
+    });
     cleanup.push(() => safeBrowser.deactivate());
     pluginInstance.rpc.registerForwarder(mainPath, safeBrowser);
     return {safeBrowser, pluginRpc: pluginInstance.rpc};

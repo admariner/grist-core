@@ -1,2 +1,5 @@
 {
+    "oidc": {
+        "emailNotVerifiedError": "Verifique seu e-mail com o provedor de identidade e faça login novamente."
+    }
 }

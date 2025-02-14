@@ -25,6 +25,8 @@ export type BEHAVIOR = "empty"|"formula"|"data";
 export interface ColumnRec extends IRowModel<"_grist_Tables_column"> {
   table: ko.Computed<TableRec>;
   widgetOptionsJson: ObjObservable<any>;
+  /** Widget options that are save to copy over (for now, without rules) */
+  cleanWidgetOptionsJson: ko.Computed<string>;
   viewFields: ko.Computed<KoArray<ViewFieldRec>>;
   summarySource: ko.Computed<ColumnRec>;
 
@@ -61,11 +63,17 @@ export interface ColumnRec extends IRowModel<"_grist_Tables_column"> {
   displayColModel: ko.Computed<ColumnRec>;
   visibleColModel: ko.Computed<ColumnRec>;
 
+  // Reverse Ref/RefList column for this column. Only for Ref/RefList columns in two-way relations.
+  reverseColModel: ko.Computed<ColumnRec>;
+  // If this column has a relation.
+  hasReverse: ko.Computed<boolean>;
+
   disableModifyBase: ko.Computed<boolean>;    // True if column config can't be modified (name, type, etc.)
   disableModify: ko.Computed<boolean>;        // True if column can't be modified (is summary) or is being transformed.
   disableEditData: ko.Computed<boolean>;      // True to disable editing of the data in this column.
 
   isHiddenCol: ko.Computed<boolean>;
+  isFormCol: ko.Computed<boolean>;
 
   // Returns the rowModel for the referenced table, or null, if is not a reference column.
   refTable: ko.Computed<TableRec|null>;
@@ -91,6 +99,12 @@ export interface ColumnRec extends IRowModel<"_grist_Tables_column"> {
   saveDisplayFormula(formula: string): Promise<void>|undefined;
 
   createValueParser(): (value: string) => any;
+
+  /** Helper method to add a reverse column (only for Ref/RefList) */
+  addReverseColumn(): Promise<void>;
+
+  /** Helper method to remove a reverse column (only for Ref/RefList) */
+  removeReverseColumn(): Promise<void>;
 }
 
 export function createColumnRec(this: ColumnRec, docModel: DocModel): void {
@@ -135,6 +149,8 @@ export function createColumnRec(this: ColumnRec, docModel: DocModel): void {
 
   // The display column to use for the column, or the column itself when no displayCol is set.
   this.displayColModel = refRecord(docModel.columns, this.displayColRef);
+  this.reverseColModel = refRecord(docModel.columns, this.reverseCol);
+  this.hasReverse = this.autoDispose(ko.pureComputed(() => Boolean(this.reverseColModel().id())));
   this.visibleColModel = refRecord(docModel.columns, this.visibleCol);
 
   this.disableModifyBase = ko.pureComputed(() => Boolean(this.summarySourceCol()));
@@ -142,6 +158,11 @@ export function createColumnRec(this: ColumnRec, docModel: DocModel): void {
   this.disableEditData = ko.pureComputed(() => Boolean(this.summarySourceCol()));
 
   this.isHiddenCol = ko.pureComputed(() => gristTypes.isHiddenCol(this.colId()));
+  this.isFormCol = ko.pureComputed(() => (
+    !this.isHiddenCol() &&
+    this.pureType() !== 'Attachments' &&
+    !this.isRealFormula()
+  ));
 
   // Returns the rowModel for the referenced table, or null, if this is not a reference column.
   this.refTable = ko.pureComputed(() => {
@@ -168,6 +189,29 @@ export function createColumnRec(this: ColumnRec, docModel: DocModel): void {
     const key = `formula-assistant-history-v2-${docId}-${this.table().tableId()}-${this.colId()}`;
     return localStorageJsonObs(key, {messages: [], conversationId: uuidv4()} as ChatHistory);
   }));
+
+  this.cleanWidgetOptionsJson = ko.pureComputed(() => {
+    const options = this.widgetOptionsJson();
+    if (options && options.rules) {
+      delete options.rules;
+    }
+    return JSON.stringify(options);
+  });
+
+  this.addReverseColumn = () => {
+    return docModel.docData.sendAction(['AddReverseColumn', this.table.peek().tableId.peek(), this.colId.peek()]);
+  };
+
+  this.removeReverseColumn = async () => {
+    if (!this.hasReverse.peek()) {
+      throw new Error("Column does not have a reverse column");
+    }
+    // Remove the other column. Data engine will take care of removing the relation.
+    const column = this.reverseColModel.peek();
+    const tableId = column.table.peek().tableId.peek();
+    const colId = column.colId.peek();
+    return await docModel.docData.sendAction(['RemoveColumn', tableId, colId]);
+  };
 }
 
 export function formatterForRec(

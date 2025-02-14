@@ -137,6 +137,7 @@ async function saveChoiceEntries() {
 describe('ChoiceList', function() {
   this.timeout(20000);
   const cleanup = setupTestSuite();
+  const clipboard = gu.getLockableClipboard();
 
   const WHITE_FILL = 'rgba(255, 255, 255, 1)';
   const UNSET_FILL = WHITE_FILL;
@@ -441,19 +442,19 @@ describe('ChoiceList', function() {
   const convertColumn = stackWrapFunc(async function(typeRe: RegExp) {
     await gu.setType(typeRe);
     await gu.waitForServer();
-    await driver.findContent('.type_transform_prompt button', /Apply/).click();
+    await driver.findContent('.test-type-transform-apply', /Apply/).click();
     await gu.waitForServer();
   });
 
   it('should allow reasonable conversions between ChoiceList and other types', async function() {
     await gu.enterGridRows({rowNum: 1, col: 'A'},
-      [['Hello'], ['World'], [' Foo,Bar;Baz!,"Qux, quux corge", "80\'s",']]);
+      [['Hello'], ['World'], ['Foo,Bar;Baz!,"Qux, quux corge", "80\'s",']]);
     await testTextChoiceListConversions();
   });
 
   it('should allow ChoiceList conversions for column used in summary', async function() {
     // Add a widget with a summary on column A.
-    await gu.addNewSection(/Table/, /Table1/, {summarize: [/^A$/]});
+    await gu.addNewSection(/Table/, /Table1/, {dismissTips: true, summarize: [/^A$/]});
     await testTextChoiceListConversions();
     await gu.undo();
   });
@@ -533,7 +534,7 @@ describe('ChoiceList', function() {
     assert.deepEqual(await gu.getVisibleGridCells({rowNums: [1, 2, 3], cols: ['A']}), [
       'Hello',
       'World',
-      ' Foo,Bar;Baz!,"Qux, quux corge", "80\'s",',   // That's the text originally entered into this Text cell.
+      'Foo,Bar;Baz!,"Qux, quux corge", "80\'s",',   // That's the text originally entered into this Text cell.
     ]);
   }
 
@@ -748,12 +749,17 @@ describe('ChoiceList', function() {
     await gu.sendKeys('Choice 1', Key.ENTER, 'Choice 2', Key.ENTER, 'Choice 3', Key.ENTER);
 
     // Copy all the choices
-    await gu.sendKeys(Key.chord(modKey, 'a'), await gu.copyKey());
+    await gu.sendKeys(await gu.selectAllKey());
+    await clipboard.lockAndPerform(async (cb) => {
+      await cb.copy();
 
-    // Delete all the choices, then paste them back and verify no data was lost.
-    await driver.sendKeys(Key.BACK_SPACE);
-    assert.deepEqual(await getEditModeChoiceLabels(), []);
-    await gu.sendKeys(await gu.pasteKey());
+      // Delete all the choices, then paste them back
+      await driver.sendKeys(Key.BACK_SPACE);
+      assert.deepEqual(await getEditModeChoiceLabels(), []);
+      await cb.paste();
+    });
+
+    // Verify no data was lost
     assert.deepEqual(await getEditModeChoiceLabels(), ['Choice 1', 'Choice 2', 'Choice 3']);
 
     // In Jenkins, clipboard contents are pasted from the system clipboard, which only copies
@@ -846,14 +852,18 @@ describe('ChoiceList', function() {
 
       // Make sure we can copy and paste without adding new item
       await clickEntry('foo');
-      await gu.sendKeys(await gu.cutKey());
-      await gu.sendKeys(await gu.pasteKey());
-      await gu.sendKeys(await gu.pasteKey());
+      await clipboard.lockAndPerform(async (cb) => {
+        await cb.cut();
+        await cb.paste();
+        await cb.paste();
+      });
       await gu.sendKeys(Key.ENTER);
       await clickEntry('two');
-      await gu.sendKeys(await gu.copyKey());
-      await gu.sendKeys(Key.ARROW_RIGHT);
-      await gu.sendKeys(await gu.pasteKey());
+      await clipboard.lockAndPerform(async (cb) => {
+        await cb.copy();
+        await gu.sendKeys(Key.ARROW_RIGHT);
+        await cb.paste();
+      });
       await gu.sendKeys(Key.ENTER);
       assert.deepEqual(await getEditModeChoiceLabels(), ["foofoo", "three", "twotwo"]);
       await saveChoiceEntries();

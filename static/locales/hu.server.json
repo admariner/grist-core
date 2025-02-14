@@ -1,0 +1,5 @@
+{
+    "oidc": {
+        "emailNotVerifiedError": "Kérem ellenőrizze az e-mail címet az azonosítási szolgáltatónál, és jelentkezzen be újra."
+    }
+}

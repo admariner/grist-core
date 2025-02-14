@@ -8,6 +8,7 @@ import {EnvironmentSnapshot} from 'test/server/testUtils';
 describe('WebhookPage', function () {
   this.timeout(60000);
   const cleanup = setupTestSuite();
+  const clipboard = gu.getLockableClipboard();
 
   let session: gu.Session;
   let oldEnv: EnvironmentSnapshot;
@@ -51,9 +52,11 @@ describe('WebhookPage', function () {
       'Name',
       'Memo',
       'Event Types',
-      'URL',
       'Table',
+      'Filter for changes in these columns (semicolon-separated ids)',
       'Ready Column',
+      'URL',
+      'Header Authorization',
       'Webhook Id',
       'Enabled',
       'Status',
@@ -79,15 +82,17 @@ describe('WebhookPage', function () {
     await gu.waitToPass(async () => {
       assert.equal(await getField(1, 'Webhook Id'), id);
     });
-    // Now other fields like name and memo are persisted.
+    // Now other fields like name, memo, watchColIds, and Header Auth are persisted.
     await setField(1, 'Name', 'Test Webhook');
     await setField(1, 'Memo', 'Test Memo');
+    await setField(1, 'Filter for changes in these columns (semicolon-separated ids)', 'A; B');
     await gu.waitForServer();
     await driver.navigate().refresh();
     await waitForWebhookPage();
     await gu.waitToPass(async () => {
       assert.equal(await getField(1, 'Name'), 'Test Webhook');
       assert.equal(await getField(1, 'Memo'), 'Test Memo');
+      assert.equal(await getField(1, 'Filter for changes in these columns (semicolon-separated ids)'), 'A;B');
     });
     // Make sure the webhook is actually working.
     await docApi.addRows('Table1', {A: ['zig'], B: ['zag']});
@@ -109,6 +114,27 @@ describe('WebhookPage', function () {
     assert.equal(await gu.getCardListCount(), 1);
     await docApi.removeRows('Table2', [1]);
     assert.lengthOf((await docApi.getRows('Table2')).A, 0);
+  });
+
+  it('can create webhook with persistant header authorization', async function () {
+    // The webhook won't work because the header auth doesn't match the api key of the current test user.
+    await openWebhookPage();
+    await setField(1, 'Event Types', 'add\nupdate\n');
+    await setField(1, 'URL', `http://${host}/api/docs/${doc.id}/tables/Table2/records?flat=1`);
+    await setField(1, 'Table', 'Table1');
+    await gu.waitForServer();
+    await driver.navigate().refresh();
+    await waitForWebhookPage();
+    await setField(1, 'Header Authorization', 'Bearer 1234');
+    await gu.waitForServer();
+    await driver.navigate().refresh();
+    await waitForWebhookPage();
+    await gu.waitToPass(async () => {
+      assert.equal(await getField(1, 'Header Authorization'), 'Bearer 1234');
+    });
+    await gu.getDetailCell({col:'Header Authorization', rowNum: 1}).click();
+    await gu.sendKeys(Key.DELETE);
+    await gu.waitForServer();
   });
 
   it('can create two webhooks', async function () {
@@ -192,7 +218,7 @@ describe('WebhookPage', function () {
     await openWebhookPage();
 
     // Open another tab.
-    await driver.executeScript("return window.open('about:blank', '_blank')");
+    await driver.executeScript("window.open('about:blank', '_blank')");
     const [ownerTab, owner2Tab] = await driver.getAllWindowHandles();
 
     await driver.switchTo().window(owner2Tab);
@@ -256,9 +282,11 @@ describe('WebhookPage', function () {
     await openWebhookPage();
     await setField(1, 'Name', '1234');
     await gu.waitForServer();
-    await gu.sendKeys(await gu.copyKey());
-    await gu.getDetailCell({col: 'Memo', rowNum: 1}).click();
-    await gu.sendKeys(await gu.pasteKey());
+    await clipboard.lockAndPerform(async (cb) => {
+      await cb.copy();
+      await gu.getDetailCell({col: 'Memo', rowNum: 1}).click();
+      await cb.paste();
+    });
     await gu.waitForServer();
     assert.equal(await getField(1, 'Memo'), '1234');
   });
@@ -275,9 +303,9 @@ async function getField(rowNum: number, col: string) {
 }
 
 async function openWebhookPage() {
+  await gu.wipeToasts();
   await gu.openDocumentSettings();
-  const button = await driver.findContentWait('a', /Manage Webhooks/, 3000);
-  await gu.scrollIntoView(button).click();
+  await gu.scrollIntoView(driver.findContentWait('a', /Manage Webhooks/i, 3000)).click();
   await waitForWebhookPage();
 }
 

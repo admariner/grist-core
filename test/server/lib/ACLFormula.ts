@@ -1,8 +1,9 @@
 import {CellValue} from 'app/common/DocActions';
-import {AclMatchFunc, InfoView} from 'app/common/GranularAccessClause';
-import {compileAclFormula} from 'app/server/lib/ACLFormula';
+import {GristObjCode} from 'app/plugin/GristData';
+import {CompiledPredicateFormula, compilePredicateFormula} from 'app/common/PredicateFormula';
+import {InfoView} from 'app/common/RecordView';
+import {User} from 'app/common/User';
 import {makeExceptionalDocSession} from 'app/server/lib/DocSession';
-import {User} from 'app/server/lib/GranularAccess';
 import {assert} from 'chai';
 import {createDocTools} from 'test/server/docTools';
 import * as testUtils from 'test/server/testUtils';
@@ -25,7 +26,7 @@ describe('ACLFormula', function() {
 
   const V = getInfoView;    // A shortcut.
 
-  type SetAndCompile = (aclFormula: string) => Promise<AclMatchFunc>;
+  type SetAndCompile = (aclFormula: string) => Promise<CompiledPredicateFormula>;
   let setAndCompile: SetAndCompile;
 
   before(async function () {
@@ -43,7 +44,7 @@ describe('ACLFormula', function() {
         fakeSession, {tableId: '_grist_ACLRules', filters: {id: [ruleRef]}});
       assert(tableData[3].aclFormulaParsed, "Expected aclFormulaParsed to be populated");
       const parsedFormula = String(tableData[3].aclFormulaParsed[0]);
-      return compileAclFormula(JSON.parse(parsedFormula));
+      return compilePredicateFormula(JSON.parse(parsedFormula));
     };
   });
 
@@ -169,6 +170,51 @@ describe('ACLFormula', function() {
     assert.equal(compiled({user: new User({}), rec: V({A: null, B: 0})}), true);
   });
 
+  it('should handle the supported string methods', async function() {
+    let compiled = await setAndCompile("rec.A.lower() == rec.B");
+    assert.equal(compiled({user: new User({}), rec: V({A: "foo", B: "foo"})}), true);
+    assert.equal(compiled({user: new User({}), rec: V({A: "FoO", B: "foo"})}), true);
+    assert.equal(compiled({user: new User({}), rec: V({A: "Foo", B: "foo"})}), true);
+    assert.equal(compiled({user: new User({}), rec: V({A: "bar", B: "foo"})}), false);
+    assert.equal(compiled({user: new User({}), rec: V({A: " foo ", B: "foo"})}), false);
+    assert.equal(compiled({user: new User({}), rec: V({A: "foo", B: "Foo"})}), false);
+    assert.equal(compiled({user: new User({}), rec: V({A: "Foo", B: "Foo"})}), false);
+
+    compiled = await setAndCompile("user.email.upper() in [rec.A.upper()]");
+    assert.equal(compiled({user: new User({email: 'Foo@'}), rec: V({A: "foo@"})}), true);
+    assert.equal(compiled({user: new User({email: 'fOo@'}), rec: V({A: "FOo@"})}), true);
+    assert.equal(compiled({user: new User({email: 'foo@'}), rec: V({A: "bar@"})}), false);
+    assert.equal(compiled({user: new User({email: 'foo@'}), rec: V({A: "foo"})}), false);
+    assert.equal(compiled({user: new User({email: 'x1/Y2'}), rec: V({A: "X1/y2"})}), true);
+    assert.equal(compiled({user: new User({email: ''}), rec: V({A: "foo"})}), false);
+  });
+
+  it('should show reasonable errors for unsupported methods and functions', async function() {
+    let compiled = await setAndCompile("rec.lower() == rec.B");
+    assert.throws(() => compiled({user: new User({}), rec: V({A: "foo", B: "foo"})}),
+      /Not a function: 'rec.lower'/);
+
+    compiled = await setAndCompile("rec.A.capitalize() == rec.B");
+    assert.throws(() => compiled({user: new User({}), rec: V({A: "foo", B: "foo"})}),
+      /Not a function: 'rec.A.capitalize'/);
+
+    compiled = await setAndCompile("rec.A.lower() == rec.B");
+    assert.throws(() => compiled({user: new User({}), rec: V({A: 1, B: "foo"})}),
+      /Not a function: 'rec.A.lower'/);   // Because rec.A is not a string.
+
+    await assert.isRejected(setAndCompile("lower(rec.A) == rec.B"),
+      /Unknown variable 'lower'/);
+
+    compiled = await setAndCompile("rec.get('A') == rec.B");
+    assert.throws(() => compiled({user: new User({}), rec: V({A: "foo", B: "foo"})}),
+      /Not a function: 'rec.get'/);   // only explicitly supported functions are supported
+
+    // Try to be tricky: if rec.A is a function, that's weird, make sure we don't call it blindly.
+    compiled = await setAndCompile("rec.A() == rec.B");
+    assert.throws(() => compiled({user: new User({}), rec: V({A: (() => 1) as any, B: "foo"})}),
+      /Not a function: 'rec.A'/);     // only explicitly supported functions are supported
+  });
+
   it('should handle nested attribute lookups', async function () {
     const compiled = await setAndCompile('user.office.city == "New York"');
     assert.equal(compiled({user: new User({office: V({city: "New York"})})}), true);
@@ -177,6 +223,25 @@ describe('ACLFormula', function() {
     assert.throws(() => compiled({user: new User({})}), /No value for 'user.office'/);
     assert.equal(compiled({user: new User({office: 5})}), false);
     assert.throws(() => compiled({user: new User({office: null})}), /No value for 'user.office'/);
+  });
+
+  it('should not support unexpected attributes', async function () {
+    let compiled = await setAndCompile("user.email.length == rec.A");
+    assert.equal(compiled({user: new User({email: 'Foo'}), rec: V({A: 3})}), false);
+    assert.equal(compiled({user: new User({email: 'Foo'}), rec: V({A: null})}), false);
+    assert.equal(compiled({user: new User({email: 'Foo'}), rec: V({A: ""})}), false);
+    assert.equal(compiled({user: new User({email: 'Foo'}), rec: V({A: undefined as any})}), true);
+    assert.equal(compiled({user: new User({email: {}}), rec: V({A: undefined as any})}), true);
+    assert.equal(compiled({user: new User({email: []}), rec: V({A: undefined as any})}), true);
+    assert.equal(compiled({user: new User({email: 5}), rec: V({A: undefined as any})}), true);
+    assert.equal(compiled({user: new User({email: {length: 'x'}}), rec: V({A: 'x'})}), true);
+
+    compiled = await setAndCompile("user.email.asdf == rec.A");
+    assert.equal(compiled({user: new User({email: 'Foo'}), rec: V({A: undefined as any})}), true);
+
+    compiled = await setAndCompile("user.email.toUpperCase.name == rec.A");
+    assert.throws(() => compiled({user: new User({email: 'Foo'}), rec: V({A: ""})}),
+      /No value for 'user.email.toUpperCase'/);
   });
 
   it('should handle "in" and "not in" when RHS is nullish', async function() {
@@ -192,5 +257,49 @@ describe('ACLFormula', function() {
     compiled = await setAndCompile('(user.Email in rec.emails) == (user.Name in rec.emails)');
     assert.equal(compiled({user, rec: V({emails: null})}), true);
     assert.equal(compiled({user, rec: V({emails: 'X@'})}), false);
+  });
+
+  it('should decode cell values so that "in" is safe to use with lists', async function () {
+    const user = new User({Email: 'L'});
+
+    // A previous bug meant that the above user would always pass this formula,
+    // because an encoded list always starts with the 'L' type code,
+    // and encoded cell values were used in evaluating formulas.
+    let compiled = await setAndCompile('user.Email in rec.emails');
+    assert.equal(compiled({user, rec: V({emails: [GristObjCode.List]})}), false);
+    assert.equal(compiled({user, rec: V({emails: [GristObjCode.List, "X"]})}), false);
+    assert.equal(compiled({user, rec: V({emails: [GristObjCode.List, "L"]})}), true);
+
+    // This should never happen (nothing should be encoded as an empty list),
+    // this just shows what would happen.
+    assert.throws(() => compiled({user, rec: V({emails: [] as any})}),
+      /\.includes is not a function/);
+
+    // List literals aren't decoded and work as expected.
+    compiled = await setAndCompile('user.Email in []');
+    assert.equal(compiled({user, rec: V({})}), false);
+
+    compiled = await setAndCompile('user.Email in ["X"]');
+    assert.equal(compiled({user, rec: V({})}), false);
+
+    compiled = await setAndCompile('user.Email in ["L"]');
+    assert.equal(compiled({user, rec: V({})}), true);
+  });
+
+  it('should allow comparing dates', async function () {
+    const user = new User({});
+
+    const compiled = await setAndCompile('rec.date1 < rec.date2');
+    for (let i = 0; i < 150; i++) {
+      const date1 = i * 10000000000;
+      for (let j = 0; j < 150; j++) {
+        const date2 = j * 10000000000;
+        const rec = V({
+          date1: [GristObjCode.Date, date1],
+          date2: [GristObjCode.Date, date2],
+        });
+        assert.equal(compiled({user, rec}), date1 < date2);
+      }
+    }
   });
 });

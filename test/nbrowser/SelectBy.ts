@@ -41,6 +41,7 @@ describe("SelectBy", function() {
 
     // open document
     await driver.get(`${server.getHost()}/o/nasa/doc/${doc.id}`);
+    await gu.waitForDocToLoad();
 
     // create a new page with table1 and table2 as 2 tables
     await gu.addNewPage(/Table/, /Table1/);
@@ -100,7 +101,7 @@ describe("SelectBy", function() {
 
     // Create a page with with charts and custom widget and then check that no linking is offered
     await gu.addNewPage(/Chart/, /Table1/);
-    await gu.addNewSection(/Custom/, /Table2/);
+    await gu.addNewSection(/Custom/, /Table2/, {customWidget: /Custom URL/});
 
     // open add widget to page
     await driver.findWait('.test-dp-add-new', 2000).doClick();
@@ -128,6 +129,7 @@ describe("SelectBy", function() {
 
     // open Summary page
     await driver.get(`${server.getHost()}/o/nasa/doc/${doc.id}/p/4`);
+    await gu.waitForDocToLoad();
 
     // add new widget to page
     await driver.findWait('.test-dp-add-new', 2000).doClick();
@@ -154,12 +156,12 @@ describe("SelectBy", function() {
     assert.equal(await gu.getDetailCell({section, rowNum: 1, col: 'A'}).getText(), '1');
 
     // Check there are nav buttons in the card view.
-    assert.equal(await section.find('.btn.detail-left').isPresent(), true);
-    assert.equal(await section.find('.btn.detail-right').isPresent(), true);
+    assert.equal(await section.find('.detail-button.detail-left').isPresent(), true);
+    assert.equal(await section.find('.detail-button.detail-right').isPresent(), true);
     assert.equal(await section.find('.grist-single-record__menu__count').getText(), '1 OF 1');
 
     // Now add a record to the source table using the card view.
-    await section.find('.btn.detail-add-btn').click();
+    await section.find('.detail-button.detail-add-btn').click();
     assert.equal(await gu.getDetailCell({section, rowNum: 1, col: 'A'}).getText(), '');
     await gu.getDetailCell({section, rowNum: 1, col: 'A'}).click();
     await gu.sendKeys('1', Key.ENTER);

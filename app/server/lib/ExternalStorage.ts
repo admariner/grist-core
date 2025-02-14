@@ -1,9 +1,11 @@
 import {ObjMetadata, ObjSnapshot, ObjSnapshotWithMetadata} from 'app/common/DocSnapshot';
 import log from 'app/server/lib/log';
 import {createTmpDir} from 'app/server/lib/uploads';
+
 import {delay} from 'bluebird';
 import * as fse from 'fs-extra';
 import * as path from 'path';
+import stream from 'node:stream';
 
 // A special token representing a deleted document, used in places where a
 // checksum is expected otherwise.
@@ -38,6 +40,9 @@ export interface ExternalStorage {
   // newest should be given first.
   remove(key: string, snapshotIds?: string[]): Promise<void>;
 
+  // Removes all keys which start with the given prefix
+  removeAllWithPrefix?(prefix: string): Promise<void>;
+
   // List content versions that exist for the given key.  More recent versions should
   // come earlier in the result list.
   versions(key: string): Promise<ObjSnapshot[]>;
@@ -52,6 +57,9 @@ export interface ExternalStorage {
 
   // Close the storage object.
   close(): Promise<void>;
+
+  uploadStream?(key: string, inStream: stream.Readable, metadata?: ObjMetadata): Promise<string|null|typeof Unchanged>;
+  downloadStream?(key: string, outStream: stream.Writable, snapshotId?: string ): Promise<string>;
 }
 
 /**
@@ -59,8 +67,27 @@ export interface ExternalStorage {
  * E.g. this could convert "<docId>" to "v1/<docId>.grist"
  */
 export class KeyMappedExternalStorage implements ExternalStorage {
+  public uploadStream: ExternalStorage['uploadStream'];
+  public downloadStream: ExternalStorage['downloadStream'];
+  public removeAllWithPrefix: ExternalStorage['removeAllWithPrefix'];
+
   constructor(private _ext: ExternalStorage,
               private _map: (key: string) => string) {
+    if (_ext.uploadStream !== undefined) {
+      const extUploadStream = _ext.uploadStream;
+      this.uploadStream =
+        (key, inStream, metadata) => extUploadStream.call(_ext, this._map(key), inStream, metadata);
+    }
+    if (_ext.downloadStream !== undefined) {
+      const extDownloadStream = _ext.downloadStream;
+      this.downloadStream =
+        (key, outStream, snapshotId) => extDownloadStream.call(_ext, this._map(key), outStream, snapshotId);
+    }
+    if (_ext.removeAllWithPrefix !== undefined) {
+      const extRemoveAllWithPrefix = _ext.removeAllWithPrefix;
+      this.removeAllWithPrefix =
+        (prefix) => extRemoveAllWithPrefix.call(_ext, this._map(prefix));
+    }
   }
 
   public exists(key: string, snapshotId?: string): Promise<boolean> {
@@ -226,13 +253,16 @@ export class ChecksummedExternalStorage implements ExternalStorage {
           const expectedChecksum = await this._options.sharedHash.load(fromKey);
           // Let null docMD5s pass.  Otherwise we get stuck if redis is cleared.
           // Otherwise, make sure what we've got matches what we expect to get.
-          // S3 is eventually consistent - if you overwrite an object in it, and then read from it,
-          // you may get an old version for some time.
+          // AWS S3 was eventually consistent, but now has stronger guarantees:
+          // https://aws.amazon.com/blogs/aws/amazon-s3-update-strong-read-after-write-consistency/
+          //
+          // Previous to this change, if you overwrote an object in it,
+          // and then read from it, you may have got an old version for some time.
+          // We are confident this should not be the case anymore, though this has to be studied carefully.
           // If a snapshotId was specified, we can skip this check.
           if (expectedChecksum && expectedChecksum !== checksum) {
-            log.error("ext %s download: data for %s has wrong checksum: %s (expected %s)",
-                      this.label, fromKey, checksum, expectedChecksum);
-            return undefined;
+            log.warn(`ext ${this.label} download: data for ${fromKey} has wrong checksum:` +
+              ` ${checksum} (expected ${expectedChecksum})`);
           }
         }
 
@@ -368,16 +398,52 @@ export interface PropStorage {
 export const Unchanged = Symbol('Unchanged');
 
 export interface ExternalStorageSettings {
-  purpose: 'doc' | 'meta';
+  purpose: 'doc' | 'meta' | 'attachments';
   basePrefix?: string;
   extraPrefix?: string;
+}
+
+/**
+ * Function returning the core ExternalStorage implementation,
+ * which may then be wrapped in additional layer(s) of ExternalStorage.
+ * See ICreate.ExternalStorage.
+ * Uses S3 by default in hosted Grist.
+*/
+export type ExternalStorageCreator =
+  (purpose: ExternalStorageSettings["purpose"], extraPrefix: string) => ExternalStorage | undefined;
+
+export class UnsupportedPurposeError extends Error {
+  constructor(purpose: ExternalStorageSettings["purpose"]) {
+    super(`create.ExternalStorage: unsupported purpose '${purpose}'`);
+  }
+}
+
+function stripTrailingSlash(text: string): string {
+  return text.endsWith("/") ? text.slice(0, -1) : text;
+}
+
+function stripLeadingSlash(text: string): string {
+  return text[0] === "/" ? text.slice(1) : text;
+}
+
+export function joinKeySegments(keySegments: string[]): string {
+  if (keySegments.length < 1) {
+    return "";
+  }
+  const firstPart = keySegments[0];
+  const remainingParts = keySegments.slice(1);
+  const strippedParts = [
+    stripTrailingSlash(firstPart),
+    ...remainingParts.map(stripTrailingSlash).map(stripLeadingSlash)
+  ];
+  return strippedParts.join("/");
 }
 
 /**
  * The storage mapping we use for our SaaS. A reasonable default, but relies
  * on appropriate lifecycle rules being set up in the bucket.
  */
-export function getExternalStorageKeyMap(settings: ExternalStorageSettings): (docId: string) => string {
+export function getExternalStorageKeyMap(settings: ExternalStorageSettings): (originalKey: string) => string {
   const {basePrefix, extraPrefix, purpose} = settings;
   let fullPrefix = basePrefix + (basePrefix?.endsWith('/') ? '' : '/');
   if (extraPrefix) {
@@ -385,17 +451,20 @@ export function getExternalStorageKeyMap(settings: ExternalStorageSettings): (do
   }
 
   // Set up how we name files/objects externally.
-  let fileNaming: (docId: string) => string;
+  let fileNaming: (originalKey: string) => string;
   if (purpose === 'doc') {
     fileNaming = docId => `${docId}.grist`;
   } else if (purpose === 'meta') {
     // Put this in separate prefix so a lifecycle rule can prune old versions of the file.
     // Alternatively, could go in separate bucket.
     fileNaming = docId => `assets/unversioned/${docId}/meta.json`;
+  } else if (purpose === 'attachments') {
+    // Prefix-only - attachments system handles exact naming
+    fileNaming = attachmentPath => `attachments/${stripLeadingSlash(attachmentPath)}`;
   } else {
-    throw new Error('create.ExternalStorage: unrecognized purpose');
+    throw new UnsupportedPurposeError(settings.purpose);
   }
-  return docId => (fullPrefix + fileNaming(docId));
+  return originalKey => (fullPrefix + fileNaming(originalKey));
 }
 
 export function wrapWithKeyMappedStorage(rawStorage: ExternalStorage, settings: ExternalStorageSettings) {

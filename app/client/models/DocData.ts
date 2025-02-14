@@ -186,8 +186,12 @@ export class DocData extends BaseDocData {
     return this.sendActions([action], optDesc).then((retValues) => retValues[0]);
   }
 
-  public registerVirtualTable(tableId: string, Cons: typeof TableData) {
+  public registerVirtualTableFactory(tableId: string, Cons: typeof TableData) {
     this._virtualTablesFunc.set(tableId, Cons);
+  }
+
+  public unregisterVirtualTableFactory(tableId: string) {
+    this._virtualTablesFunc.delete(tableId);
   }
 
   // See documentation of sendActions().
@@ -250,6 +254,7 @@ class BundleSender {
     return this._getSendPromise()
     .then(result => ({
       actionNum: result.actionNum,
+      actionHash: result.actionHash,
       retValues: result.retValues.slice(start, end),
       isModification: result.isModification
     }));

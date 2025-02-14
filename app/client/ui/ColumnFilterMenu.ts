@@ -5,6 +5,7 @@
  */
 import * as commands from 'app/client/components/commands';
 import {GristDoc} from 'app/client/components/GristDoc';
+import {FocusLayer} from 'app/client/lib/FocusLayer';
 import {makeT} from 'app/client/lib/localization';
 import {ColumnFilter, NEW_FILTER_JSON} from 'app/client/models/ColumnFilter';
 import {ColumnFilterMenuModel, IFilterCount} from 'app/client/models/ColumnFilterMenuModel';
@@ -13,21 +14,30 @@ import {FilterInfo} from 'app/client/models/entities/ViewSectionRec';
 import {RowSource} from 'app/client/models/rowset';
 import {ColumnFilterFunc, SectionFilter} from 'app/client/models/SectionFilter';
 import {TableData} from 'app/client/models/TableData';
+import {ColumnFilterCalendarView} from 'app/client/ui/ColumnFilterCalendarView';
+import {relativeDatesControl} from 'app/client/ui/ColumnFilterMenuUtils';
 import {cssInput} from 'app/client/ui/cssInput';
+import {getDateRangeOptions, IDateRangeOption} from 'app/client/ui/DateRangeOptions';
 import {cssPinButton} from 'app/client/ui/RightPanelStyles';
 import {basicButton, primaryButton, textButton} from 'app/client/ui2018/buttons';
-import {cssLabel as cssCheckboxLabel, cssCheckboxSquare, cssLabelText, Indeterminate, labeledTriStateSquareCheckbox
-       } from 'app/client/ui2018/checkbox';
+import {cssLabel as cssCheckboxLabel, cssCheckboxSquare,
+        cssLabelText, Indeterminate, labeledTriStateSquareCheckbox} from 'app/client/ui2018/checkbox';
 import {theme, vars} from 'app/client/ui2018/cssVars';
 import {icon} from 'app/client/ui2018/icons';
 import {cssOptionRowIcon, menu, menuCssClass, menuDivider, menuItem} from 'app/client/ui2018/menus';
+import {cssDeleteButton, cssDeleteIcon, cssToken as cssTokenTokenBase} from 'app/client/widgets/ChoiceListEditor';
+import {ChoiceOptions} from 'app/client/widgets/ChoiceTextBox';
+import {choiceToken} from 'app/client/widgets/ChoiceToken';
 import {CellValue} from 'app/common/DocActions';
-import {IRelativeDateSpec, isEquivalentFilter, isRelativeBound} from "app/common/FilterState";
-import {formatRelBounds} from "app/common/RelativeDates";
-import {
-  Computed, dom, DomArg, DomElementArg, DomElementMethod, IDisposableOwner, input, makeTestId,
-  Observable, styled
-} from 'grainjs';
+import {IRelativeDateSpec, isEquivalentFilter, isRelativeBound} from 'app/common/FilterState';
+import {extractTypeFromColType, isDateLikeType, isList, isNumberType, isRefListType} from 'app/common/gristTypes';
+import {formatRelBounds} from 'app/common/RelativeDates';
+import {createFormatter} from 'app/common/ValueFormatter';
+import {UIRowId} from 'app/plugin/GristAPI';
+import {decodeObject} from 'app/plugin/objtypes';
+import {Computed, dom, DomArg, DomElementArg, DomElementMethod, IDisposableOwner,
+        input, makeTestId, Observable, styled} from 'grainjs';
+import {IOpenController, IPopupOptions, setPopupToCreateDom} from 'popweasel';
 import concat = require('lodash/concat');
 import identity = require('lodash/identity');
 import noop = require('lodash/noop');
@@ -35,18 +45,6 @@ import partition = require('lodash/partition');
 import some = require('lodash/some');
 import tail = require('lodash/tail');
 import debounce = require('lodash/debounce');
-import {IOpenController, IPopupOptions, setPopupToCreateDom} from 'popweasel';
-import {decodeObject} from 'app/plugin/objtypes';
-import {extractTypeFromColType, isDateLikeType, isList, isNumberType, isRefListType} from 'app/common/gristTypes';
-import {choiceToken} from 'app/client/widgets/ChoiceToken';
-import {ChoiceOptions} from 'app/client/widgets/ChoiceTextBox';
-import {ColumnFilterCalendarView} from 'app/client/ui/ColumnFilterCalendarView';
-import {cssDeleteButton, cssDeleteIcon, cssToken as cssTokenTokenBase} from 'app/client/widgets/ChoiceListEditor';
-import {relativeDatesControl} from 'app/client/ui/ColumnFilterMenuUtils';
-import {FocusLayer} from 'app/client/lib/FocusLayer';
-import {DateRangeOptions, IDateRangeOption} from 'app/client/ui/DateRangeOptions';
-import {createFormatter} from 'app/common/ValueFormatter';
-import {UIRowId} from 'app/common/TableData';
 
 const t = makeT('ColumnFilterMenu');
 
@@ -56,7 +54,7 @@ export interface IFilterMenuOptions {
   rangeInputOptions?: IRangeInputOptions;
   showAllFiltersButton?: boolean;
   doCancel(): void;
-  doSave(reset: boolean): void;
+  doSave(): void;
   renderValue(key: CellValue, value: IFilterCount): DomElementArg;
   onClose(): void;
   valueParser?(val: string): any;
@@ -106,7 +104,6 @@ export function columnFilterMenu(owner: IDisposableOwner, opts: IFilterMenuOptio
 
   let searchInput: HTMLInputElement;
   let cancel = false;
-  let reset = false;
 
   const filterMenu: HTMLElement = cssMenu(
     { tabindex: '-1' }, // Allow menu to be focused
@@ -130,10 +127,13 @@ export function columnFilterMenu(owner: IDisposableOwner, opts: IFilterMenuOptio
     dom.cls(menuCssClass),
     dom.autoDispose(filterListener),
     // Save or cancel on disposal, which should always happen as part of closing.
-    dom.onDispose(() => cancel ? doCancel() : doSave(reset)),
+    dom.onDispose(() => cancel ? doCancel() : doSave()),
     dom.onKeyDown({
       Enter: () => onClose(),
-      Escape: () => onClose(),
+      Escape: () => {
+        cancel = true;
+        onClose();
+      },
     }),
 
     // Filter by range
@@ -179,16 +179,16 @@ export function columnFilterMenu(owner: IDisposableOwner, opts: IFilterMenuOptio
           cssLinkRow(
             testId('presets-links'),
             cssLink(
-              DateRangeOptions[0].label,
-              dom.on('click', () => action(DateRangeOptions[0]))
+              getDateRangeOptions()[0].label,
+              dom.on('click', () => action(getDateRangeOptions()[0]))
             ),
             cssLink(
-              DateRangeOptions[1].label,
-              dom.on('click', () => action(DateRangeOptions[1]))
+              getDateRangeOptions()[1].label,
+              dom.on('click', () => action(getDateRangeOptions()[1]))
             ),
             cssLink(
               'More ', icon('Dropdown'),
-              menu(() => DateRangeOptions.map(
+              menu(() => getDateRangeOptions().map(
                 (option) => menuItem(() => action(option), option.label)
               ), {attach: '.' + cssMenu.className})
             ),
@@ -329,7 +329,6 @@ export function columnFilterMenu(owner: IDisposableOwner, opts: IFilterMenuOptio
           dom('div',
             cssPrimaryButton('Close', testId('apply-btn'),
               dom.on('click', () => {
-                reset = true;
                 onClose();
               }),
             ),
@@ -353,14 +352,9 @@ export function columnFilterMenu(owner: IDisposableOwner, opts: IFilterMenuOptio
               icon('PinTilted'),
               cssPinButton.cls('-pinned', model.filterInfo.isPinned),
               dom.on('click', () => filterInfo.pinned(!filterInfo.pinned())),
-              gristDoc.behavioralPromptsManager.attachTip('filterButtons', {
+              gristDoc.behavioralPromptsManager.attachPopup('filterButtons', {
                 popupOptions: {
                   attach: null,
-                  modifiers: {
-                    flip: {
-                      behavior: ['right', 'top'],
-                    },
-                  },
                   placement: 'right',
                 },
               }),
@@ -703,16 +697,13 @@ export function createFilterMenu(params: ICreateFilterMenuParams) {
     model,
     valueCounts,
     onClose: () => { openCtl.close(); onClose(); },
-    doSave: (reset: boolean = false) => {
+    doSave: () => {
       const spec = columnFilter.makeFilterJson();
       const {viewSection} = sectionFilter;
       viewSection.setFilter(
         fieldOrColumn.origCol().origColRef(),
         {filter: spec}
       );
-      if (reset) {
-        sectionFilter.resetTemporaryRows();
-      }
 
       // Check if the save was for a new filter, and if that new filter was pinned. If it was, and
       // it is the second pinned filter in the section, trigger a tip that explains how multiple

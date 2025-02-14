@@ -169,9 +169,17 @@ export function isEmptyList(value: CellValue): boolean {
   return Array.isArray(value) && value.length === 1 && value[0] === GristObjCode.List;
 }
 
+/**
+ * Returns whether a value (as received in a DocAction) represents an empty reference list.
+ */
+export function isEmptyReferenceList(value: CellValue): boolean {
+  return Array.isArray(value) && value.length === 1 && value[0] === GristObjCode.ReferenceList;
+}
+
 function isNumber(v: CellValue) { return typeof v === 'number' || typeof v === 'boolean'; }
 function isNumberOrNull(v: CellValue) { return isNumber(v) || v === null; }
 function isBoolean(v: CellValue) { return typeof v === 'boolean' || v === 1 || v === 0; }
+function isBooleanOrNull(v: CellValue) { return isBoolean(v) || v === null; }
 
 // These values are not regular cell values, even in a column of type Any.
 const abnormalValueTypes: string[] = [GristObjCode.Exception, GristObjCode.Pending, GristObjCode.Skip,
@@ -191,7 +199,7 @@ const rightType: {[key in GristType]: (value: CellValue) => boolean} = {
   Text:           isString,
   Blob:           isString,
   Int:            isNumberOrNull,
-  Bool:           isBoolean,
+  Bool:           isBooleanOrNull,
   Date:           isNumberOrNull,
   DateTime:       isNumberOrNull,
   Numeric:        isNumberOrNull,
@@ -341,6 +349,21 @@ export function isValidRuleValue(value: CellValue|undefined) {
   // We want to strictly test if a value is boolean, when the value is 0 or 1 it might
   // indicate other number in the future.
   return value === null || typeof value === 'boolean';
+}
+
+/**
+ * Returns true if `value` is blank.
+ *
+ * Blank values include `null`, (trimmed) empty string, and 0-length lists and
+ * reference lists.
+ */
+export function isBlankValue(value: CellValue) {
+  return (
+    value === null ||
+    (typeof value === 'string' && value.trim().length === 0) ||
+    isEmptyList(value) ||
+    isEmptyReferenceList(value)
+  );
 }
 
 export type RefListValue = [GristObjCode.List, ...number[]]|null;

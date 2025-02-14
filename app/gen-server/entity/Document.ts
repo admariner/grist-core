@@ -40,6 +40,12 @@ export class Document extends Resource {
   // fetching user has on the doc, i.e. 'owners', 'editors', 'viewers'
   public access: Role|null;
 
+  // Property that may be returned when the doc is fetched to indicate the share it
+  // is being accessed with. The identifier used is the linkId, which is the share
+  // identifier that is the same between the home database and the document.
+  // The linkId is not a secret, and need only be unique within a document.
+  public linkId?: string|null;
+
   // Property set for forks, containing access the fetching user has on the trunk.
   public trunkAccess?: Role|null;
 
@@ -128,11 +134,21 @@ export class Document extends Resource {
             this.options.tutorial = null;
           } else {
             this.options.tutorial = this.options.tutorial || {};
-            if (props.options.tutorial.numSlides !== undefined) {
-              this.options.tutorial.numSlides = props.options.tutorial.numSlides;
-            }
             if (props.options.tutorial.lastSlideIndex !== undefined) {
               this.options.tutorial.lastSlideIndex = props.options.tutorial.lastSlideIndex;
+            }
+            if (props.options.tutorial.percentComplete !== undefined) {
+              this.options.tutorial.percentComplete = props.options.tutorial.percentComplete;
+            }
+          }
+        }
+        if (props.options.appearance !== undefined) {
+          if (props.options.appearance === null) {
+            this.options.appearance = null;
+          } else {
+            this.options.appearance = this.options.appearance || {};
+            if (props.options.appearance.icon !== undefined) {
+              this.options.appearance.icon = props.options.appearance.icon;
             }
           }
         }

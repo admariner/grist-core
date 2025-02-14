@@ -1,13 +1,18 @@
+import {
+  FormFieldRulesConfig,
+  FormOptionsAlignmentConfig,
+  FormOptionsSortConfig,
+} from 'app/client/components/Forms/FormConfig';
 import {DataRowModel} from 'app/client/models/DataRowModel';
 import {testId} from 'app/client/ui2018/cssVars';
 import {
   ChoiceOptionsByName,
   ChoiceTextBox,
 } from 'app/client/widgets/ChoiceTextBox';
+import {choiceToken} from 'app/client/widgets/ChoiceToken';
 import {CellValue} from 'app/common/DocActions';
 import {decodeObject} from 'app/plugin/objtypes';
 import {dom, styled} from 'grainjs';
-import {choiceToken} from 'app/client/widgets/ChoiceToken';
 
 /**
  * ChoiceListCell - A cell that renders a list of choice tokens.
@@ -33,19 +38,30 @@ export class ChoiceListCell extends ChoiceTextBox {
         if (!val) { return null; }
         // Handle any unexpected values we might get (non-array, or array with non-strings).
         const tokens: unknown[] = Array.isArray(val) ? val : [val];
-        return tokens.map(token =>
-          choiceToken(
-            String(token),
+        return tokens.map(token => {
+          const isBlank = String(token).trim() === '';
+          return choiceToken(
+            isBlank ? '[Blank]' : String(token),
             {
               ...(choiceOptionsByName.get(String(token)) || {}),
               invalid: !choiceSet.has(String(token)),
+              blank: String(token).trim() === '',
             },
             dom.cls(cssToken.className),
             testId('choice-list-cell-token')
-          )
-        );
+          );
+        });
       }),
     );
+  }
+
+  public buildFormConfigDom() {
+    return [
+      this.buildChoicesConfigDom(),
+      dom.create(FormOptionsAlignmentConfig, this.field),
+      dom.create(FormOptionsSortConfig, this.field),
+      dom.create(FormFieldRulesConfig, this.field),
+    ];
   }
 }
 

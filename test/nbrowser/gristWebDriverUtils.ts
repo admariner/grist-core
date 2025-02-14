@@ -10,7 +10,7 @@
 
 import { WebDriver, WebElement } from 'mocha-webdriver';
 
-type SectionTypes = 'Table'|'Card'|'Card List'|'Chart'|'Custom';
+type SectionTypes = 'Table'|'Card'|'Card List'|'Chart'|'Custom'|'Form';
 
 export class GristWebDriverUtils {
   public constructor(public driver: WebDriver) {
@@ -26,15 +26,21 @@ export class GristWebDriverUtils {
    *
    * Simply call this after some request has been made, and when it resolves, you know that request
    * has been processed.
-   * @param optTimeout: Timeout in ms, defaults to 2000.
+   * @param optTimeout: Timeout in ms, defaults to 5000.
    */
-  public async waitForServer(optTimeout: number = 2000) {
+  public async waitForServer(optTimeout: number = 5000) {
     await this.driver.wait(() => this.driver.executeScript(
       "return window.gristApp && (!window.gristApp.comm || !window.gristApp.comm.hasActiveRequests())"
-        + " && window.gristApp.testNumPendingApiRequests() === 0",
+        + " && window.gristApp.testNumPendingApiRequests() === 0"
+      )
+      // The catch is in case executeScript() fails. This is rare but happens occasionally when
+      // browser is busy (e.g. sorting) and doesn't respond quickly enough. The timeout selenium
+      // allows for a response is short (and I see no place to configure it); by catching, we'll
+      // let the call fail until our intended timeout expires.
+      .catch((e) => { console.log("Ignoring executeScript error", String(e)); }),
       optTimeout,
       "Timed out waiting for server requests to complete"
-    ));
+    );
   }
 
   public async waitForSidePanel() {
@@ -93,13 +99,14 @@ export class GristWebDriverUtils {
     tableRe: RegExp|string = '',
     options: PageWidgetPickerOptions = {}
   ) {
+    const {customWidget, dismissTips, dontAdd, selectBy, summarize, tableName} = options;
     const driver = this.driver;
-    if (options.dismissTips) { await this.dismissBehavioralPrompts(); }
+    if (dismissTips) { await this.dismissBehavioralPrompts(); }
 
     // select right type
     await driver.findContent('.test-wselect-type', typeRe).doClick();
 
-    if (options.dismissTips) { await this.dismissBehavioralPrompts(); }
+    if (dismissTips) { await this.dismissBehavioralPrompts(); }
 
     if (tableRe) {
       const tableEl = driver.findContent('.test-wselect-table', tableRe);
@@ -112,34 +119,32 @@ export class GristWebDriverUtils {
       // let's select table
       await tableEl.click();
 
-      if (options.dismissTips) { await this.dismissBehavioralPrompts(); }
+      if (dismissTips) { await this.dismissBehavioralPrompts(); }
 
       const pivotEl = tableEl.find('.test-wselect-pivot');
       if (await pivotEl.isPresent()) {
-        await this.toggleSelectable(pivotEl, Boolean(options.summarize));
+        await this.toggleSelectable(pivotEl, Boolean(summarize));
       }
 
-      if (options.summarize) {
+      if (summarize) {
         for (const columnEl of await driver.findAll('.test-wselect-column')) {
           const label = await columnEl.getText();
           // TODO: Matching cols with regexp calls for trouble and adds no value. I think function should be
           // rewritten using string matching only.
-          const goal = Boolean(options.summarize.find(r => label.match(r)));
+          const goal = Boolean(summarize.find(r => label.match(r)));
           await this.toggleSelectable(columnEl, goal);
         }
       }
 
-      if (options.selectBy) {
+      if (selectBy) {
         // select link
         await driver.find('.test-wselect-selectby').doClick();
-        await driver.findContent('.test-wselect-selectby option', options.selectBy).doClick();
+        await driver.findContent('.test-wselect-selectby option', selectBy).doClick();
       }
     }
 
 
-    if (options.dontAdd) {
-      return;
-    }
+    if (dontAdd) { return; }
 
     // add the widget
     await driver.find('.test-wselect-addBtn').doClick();
@@ -148,12 +153,18 @@ export class GristWebDriverUtils {
     const prompts = await driver.findAll(".test-modal-prompt");
     const prompt = prompts[0];
     if (prompt) {
-      if (options.tableName) {
+      if (tableName) {
         await prompt.doClear();
         await prompt.click();
-        await driver.sendKeys(options.tableName);
+        await driver.sendKeys(tableName);
       }
       await driver.find(".test-modal-confirm").click();
+    }
+
+    if (customWidget) {
+      await this.waitForServer();
+      await driver.findContent('.test-custom-widget-gallery-widget-name', customWidget).click();
+      await driver.find('.test-custom-widget-gallery-save').click();
     }
 
     await this.waitForServer();
@@ -203,6 +214,49 @@ export class GristWebDriverUtils {
       await check();
     }
   }
+
+  /**
+   * Refresh browser and dismiss alert that is shown (for refreshing during edits).
+   */
+  public async refreshDismiss() {
+    await this.driver.navigate().refresh();
+    await this.acceptAlert();
+    await this.waitForDocToLoad();
+  }
+
+  /**
+   * Accepts an alert.
+   */
+  public async acceptAlert() {
+    await (await this.driver.switchTo().alert()).accept();
+  }
+
+  /**
+   * Returns whether an alert is shown.
+   */
+  public async isAlertShown() {
+    try {
+      await this.driver.switchTo().alert();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Wait for the doc to be loaded, to the point of finishing fetch for the data on the current
+   * page. If you navigate from a doc page, use e.g. waitForUrl() before waitForDocToLoad() to
+   * ensure you are checking the new page and not the old.
+   */
+  public async waitForDocToLoad(timeoutMs: number = 10000): Promise<void> {
+    await this.driver.findWait('.viewsection_title', timeoutMs);
+    await this.waitForServer();
+  }
+
+  public async reloadDoc() {
+    await this.driver.navigate().refresh();
+    await this.waitForDocToLoad();
+  }
 }
 
 export interface WindowDimensions {
@@ -220,4 +274,6 @@ export interface PageWidgetPickerOptions {
   dontAdd?: boolean;
   /** If true, dismiss any tooltips that are shown. */
   dismissTips?: boolean;
+  /** Optional pattern of custom widget name to select in the gallery. */
+  customWidget?: RegExp|string;
 }

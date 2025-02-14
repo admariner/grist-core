@@ -4,21 +4,41 @@ import {ExternalStorage} from 'app/server/lib/ExternalStorage';
 import {IncomingMessage} from 'http';
 import * as fse from 'fs-extra';
 import * as minio from 'minio';
+import * as stream from 'node:stream';
 
-// The minio typings appear to be quite stale. Extend them here to avoid
-// lots of casts to any.
-type MinIOClient = minio.Client & {
-  statObject(bucket: string, key: string, options: {versionId?: string}): Promise<MinIOBucketItemStat>;
-  getObject(bucket: string, key: string, options: {versionId?: string}): Promise<IncomingMessage>;
-  listObjects(bucket: string, key: string, recursive: boolean,
-              options: {IncludeVersion?: boolean}): minio.BucketStream<minio.BucketItem>;
-  removeObjects(bucket: string, versions: Array<{name: string, versionId: string}>): Promise<void>;
-};
+// The minio-js v8.0.0 typings are sometimes incorrect. Here are some workarounds.
+interface MinIOClient extends
+  // Some of them are not directly extendable, must be omitted first and then redefined.
+  Omit<minio.Client, "listObjects" | "getBucketVersioning" | "removeObjects">
+  {
+    // The official typing returns `Promise<Readable>`, dropping some useful metadata.
+    getObject(bucket: string, key: string, options: {versionId?: string}): Promise<IncomingMessage>;
+    // The official typing dropped "options" in their .d.ts file, but it is present in the underlying impl.
+    listObjects(bucket: string, key: string, recursive: boolean,
+      options: {IncludeVersion?: boolean}): minio.BucketStream<minio.BucketItem>;
+    // The released v8.0.0 wrongly returns `Promise<void>`; borrowed from PR #1297
+    getBucketVersioning(bucketName: string): Promise<MinIOVersioningStatus>;
+    // The released v8.0.0 typing is outdated; copied over from commit 8633968.
+    removeObjects(bucketName: string, objectsList: RemoveObjectsParam): Promise<RemoveObjectsResponse[]>
+  }
 
-type MinIOBucketItemStat = minio.BucketItemStat & {
-  versionId?: string;
-  metaData?: Record<string, string>;
-};
+type MinIOVersioningStatus = "" | {
+  Status: "Enabled" | "Suspended",
+  MFADelete?: string,
+  ExcludeFolders?: boolean,
+  ExcludedPrefixes?: {Prefix: string}[]
+}
+
+type RemoveObjectsParam = string[] | { name: string, versionId?: string }[]
+
+type RemoveObjectsResponse = null | undefined | {
+  Error?: {
+    Code?: string
+    Message?: string
+    Key?: string
+    VersionId?: string
+  }
+}
 
 /**
  * An external store implemented using the MinIO client, which
@@ -38,7 +58,7 @@ export class MinIOExternalStorage implements ExternalStorage {
       region: string
     },
     private _batchSize?: number,
-    private _s3 = new minio.Client(options) as MinIOClient
+    private _s3 = new minio.Client(options) as unknown as MinIOClient
   ) {
   }
 
@@ -67,18 +87,21 @@ export class MinIOExternalStorage implements ExternalStorage {
     }
   }
 
-  public async upload(key: string, fname: string, metadata?: ObjMetadata) {
-    const stream = fse.createReadStream(fname);
+  public async uploadStream(key: string, inStream: stream.Readable, metadata?: ObjMetadata) {
     const result = await this._s3.putObject(
-      this.bucket, key, stream,
+      this.bucket, key, inStream, undefined,
       metadata ? {Metadata: toExternalMetadata(metadata)} : undefined
     );
     // Empirically VersionId is available in result for buckets with versioning enabled.
     return result.versionId || null;
   }
 
-  public async download(key: string, fname: string, snapshotId?: string) {
-    const stream = fse.createWriteStream(fname);
+  public async upload(key: string, fname: string, metadata?: ObjMetadata) {
+    const filestream = fse.createReadStream(fname);
+    return this.uploadStream(key, filestream, metadata);
+  }
+
+  public async downloadStream(key: string, outStream: stream.Writable, snapshotId?: string ) {
     const request = await this._s3.getObject(
       this.bucket, key,
       snapshotId ? {versionId: snapshotId} : {}
@@ -95,44 +118,49 @@ export class MinIOExternalStorage implements ExternalStorage {
     return new Promise<string>((resolve, reject) => {
       request
         .on('error', reject)    // handle errors on the read stream
-        .pipe(stream)
+        .pipe(outStream)
         .on('error', reject)    // handle errors on the write stream
         .on('finish', () => resolve(downloadedSnapshotId));
     });
   }
 
+  public async download(key: string, fname: string, snapshotId?: string) {
+    const fileStream = fse.createWriteStream(fname);
+    return this.downloadStream(key, fileStream, snapshotId);
+  }
+
   public async remove(key: string, snapshotIds?: string[]) {
     if (snapshotIds) {
-      await this._deleteBatch(key, snapshotIds);
+      await this._deleteVersions(key, snapshotIds);
     } else {
       await this._deleteAllVersions(key);
     }
   }
 
+  public async removeAllWithPrefix(prefix: string) {
+    const objects = await this._listObjects(this.bucket, prefix, true, { IncludeVersion: true });
+    const objectsToDelete = objects.filter(o => o.name !== undefined).map(o => ({
+      name: o.name!,
+      versionId: (o as any).versionId as (string | undefined),
+    }));
+    await this._deleteObjects(objectsToDelete);
+  }
+
   public async hasVersioning(): Promise<Boolean> {
     const versioning = await this._s3.getBucketVersioning(this.bucket);
-    return versioning && versioning.Status === 'Enabled';
+    // getBucketVersioning() may return an empty string when versioning has never been enabled.
+    // This situation is not addressed in minio-js v8.0.0, but included in our workaround.
+    return versioning !== '' && versioning?.Status === 'Enabled';
   }
 
   public async versions(key: string, options?: { includeDeleteMarkers?: boolean }) {
-    const results: minio.BucketItem[] = [];
-    await new Promise((resolve, reject) => {
-      const stream = this._s3.listObjects(this.bucket, key, false, {IncludeVersion: true});
-      stream
-        .on('error', reject)
-        .on('end', () => {
-          resolve(results);
-        })
-        .on('data', data => {
-          results.push(data);
-        });
-    });
+    const results = await this._listObjects(this.bucket, key, false, {IncludeVersion: true});
     return results
       .filter(v => v.name === key &&
         v.lastModified && (v as any).versionId &&
         (options?.includeDeleteMarkers || !(v as any).isDeleteMarker))
       .map(v => ({
-        lastModified: v.lastModified.toISOString(),
+        lastModified: v.lastModified!.toISOString(),
         // Circumvent inconsistency of MinIO API with versionId by casting it to string
         // PR to MinIO so we don't have to do that anymore:
         // https://github.com/minio/minio-js/pull/1193
@@ -161,21 +189,38 @@ export class MinIOExternalStorage implements ExternalStorage {
   // Delete all versions of an object.
   public async _deleteAllVersions(key: string) {
     const vs = await this.versions(key, {includeDeleteMarkers: true});
-    await this._deleteBatch(key, vs.map(v => v.snapshotId));
+    await this._deleteVersions(key, vs.map(v => v.snapshotId));
   }
 
   // Delete a batch of versions for an object.
-  private async _deleteBatch(key: string, versions: Array<string | undefined>) {
+  private async _deleteVersions(key: string, versions: Array<string | undefined>) {
+    return this._deleteObjects(
+      versions.filter(v => v).map(versionId => ({
+        name: key,
+        versionId,
+      }))
+    );
+  }
+
+  // Delete an arbitrary number of objects, batched appropriately.
+  private async _deleteObjects(objects: { name: string, versionId?: string }[]): Promise<void> {
     // Max number of keys per request for AWS S3 is 1000, see:
     //   https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
     // Stick to this maximum in case we are using this client to talk to AWS.
     const N = this._batchSize || 1000;
-    for (let i = 0; i < versions.length; i += N) {
-      const iVersions = versions.slice(i, i + N).filter(v => v) as string[];
-      if (iVersions.length === 0) { continue; }
-      await this._s3.removeObjects(this.bucket, iVersions.map(versionId => {
-        return { name: key, versionId };
-      }));
+    for (let i = 0; i < objects.length; i += N) {
+      const batch = objects.slice(i, i + N);
+      if (batch.length === 0) { continue; }
+      await this._s3.removeObjects(this.bucket, batch);
     }
+  }
+
+  private async _listObjects(...args: Parameters<MinIOClient["listObjects"]>): Promise<minio.BucketItem[]> {
+    const bucketItemStream = this._s3.listObjects(...args);
+    const results: minio.BucketItem[] = [];
+    for await (const data of bucketItemStream) {
+      results.push(data);
+    }
+    return results;
   }
 }

@@ -3,19 +3,31 @@ import * as express from 'express';
 import {EntityManager} from 'typeorm';
 import * as cookie from 'cookie';
 import {Request} from 'express';
+import pick from 'lodash/pick';
 
 import {ApiError} from 'app/common/ApiError';
 import {FullUser} from 'app/common/LoginSessionAPI';
-import {OrganizationProperties} from 'app/common/UserAPI';
+import {BasicRole} from 'app/common/roles';
+import {DOCTYPE_NORMAL,
+  DOCTYPE_TEMPLATE,
+  DOCTYPE_TUTORIAL,
+  OrganizationProperties,
+  PermissionDelta} from 'app/common/UserAPI';
+import {Document} from "app/gen-server/entity/Document";
+import {Organization} from 'app/gen-server/entity/Organization';
 import {User} from 'app/gen-server/entity/User';
-import {BillingOptions, HomeDBManager, QueryResult, Scope} from 'app/gen-server/lib/HomeDBManager';
+import {Workspace} from 'app/gen-server/entity/Workspace';
+import {BillingOptions, HomeDBManager, Scope} from 'app/gen-server/lib/homedb/HomeDBManager';
+import {DocumentAccessChanges, OrgAccessChanges, PreviousAndCurrent,
+        QueryResult, WorkspaceAccessChanges} from 'app/gen-server/lib/homedb/Interfaces';
 import {getAuthorizedUserId, getUserId, getUserProfiles, RequestWithLogin} from 'app/server/lib/Authorizer';
 import {getSessionUser, linkOrgWithEmail} from 'app/server/lib/BrowserSession';
 import {expressWrap} from 'app/server/lib/expressWrap';
 import {RequestWithOrg} from 'app/server/lib/extractOrg';
+import {GristServer} from 'app/server/lib/GristServer';
 import {getTemplateOrg} from 'app/server/lib/gristSettings';
 import log from 'app/server/lib/log';
-import {addPermit, clearSessionCacheIfNeeded, getDocScope, getScope, integerParam,
+import {clearSessionCacheIfNeeded, getDocScope, getScope, integerParam,
         isParameterOn, optStringParam, sendOkReply, sendReply, stringParam} from 'app/server/lib/requestUtils';
 import {IWidgetRepository} from 'app/server/lib/WidgetRepository';
 import {getCookieDomain} from 'app/server/lib/gristSessions';
@@ -70,10 +82,10 @@ export function addOrg(
   userId: number,
   props: Partial<OrganizationProperties>,
   options?: {
-    planType?: string,
+    product?: string,
     billing?: BillingOptions,
   }
-): Promise<number> {
+): Promise<Organization> {
   return dbManager.connection.transaction(async manager => {
     const user = await manager.findOne(User, {where: {id: userId}});
     if (!user) { return handleDeletedUser(); }
@@ -100,6 +112,7 @@ export class ApiServer {
    * to apply to these routes, and trustOrigin too for cross-domain requests.
    */
   constructor(
+    private _gristServer: GristServer,
     private _app: express.Application,
     private _dbManager: HomeDBManager,
     private _widgetRepository: IWidgetRepository
@@ -162,8 +175,9 @@ export class ApiServer {
       // doesn't have access to that information yet, so punting on this.
       // TODO: figure out who should be allowed to create organizations
       const userId = getAuthorizedUserId(req);
-      const orgId = await addOrg(this._dbManager, userId, req.body);
-      return sendOkReply(req, res, orgId);
+      const org = await addOrg(this._dbManager, userId, req.body);
+      this._logCreateSiteEvents(req, org);
+      return sendOkReply(req, res, org.id);
     }));
 
     // PATCH /api/orgs/:oid
@@ -171,16 +185,20 @@ export class ApiServer {
     // Update the specified org.
     this._app.patch('/api/orgs/:oid', expressWrap(async (req, res) => {
       const org = getOrgKey(req);
-      const query = await this._dbManager.updateOrg(getScope(req), org, req.body);
-      return sendReply(req, res, query);
+      const {data, ...result} = await this._dbManager.updateOrg(getScope(req), org, req.body);
+      if (data && (req.body.name || req.body.domain)) {
+        this._logRenameSiteEvents(req as RequestWithLogin, data);
+      }
+      return sendReply(req, res, result);
     }));
 
-    // // DELETE /api/orgs/:oid
+    // DELETE /api/orgs/:oid
     // Delete the specified org and all included workspaces and docs.
     this._app.delete('/api/orgs/:oid', expressWrap(async (req, res) => {
       const org = getOrgKey(req);
-      const query = await this._dbManager.deleteOrg(getScope(req), org);
-      return sendReply(req, res, query);
+      const {data, ...result} = await this._dbManager.deleteOrg(getScope(req), org);
+      if (data) { this._logDeleteSiteEvents(req, data); }
+      return sendReply(req, res, {...result, data: data?.id});
     }));
 
     // POST /api/orgs/:oid/workspaces
@@ -188,8 +206,9 @@ export class ApiServer {
     // Create a new workspace owned by the specific organization.
     this._app.post('/api/orgs/:oid/workspaces', expressWrap(async (req, res) => {
       const org = getOrgKey(req);
-      const query = await this._dbManager.addWorkspace(getScope(req), org, req.body);
-      return sendReply(req, res, query);
+      const {data, ...result} = await this._dbManager.addWorkspace(getScope(req), org, req.body);
+      if (data) { this._logCreateWorkspaceEvents(req, data); }
+      return sendReply(req, res, {...result, data: data?.id});
     }));
 
     // PATCH /api/workspaces/:wid
@@ -197,16 +216,18 @@ export class ApiServer {
     // Update the specified workspace.
     this._app.patch('/api/workspaces/:wid', expressWrap(async (req, res) => {
       const wsId = integerParam(req.params.wid, 'wid');
-      const query = await this._dbManager.updateWorkspace(getScope(req), wsId, req.body);
-      return sendReply(req, res, query);
+      const {data, ...result} = await this._dbManager.updateWorkspace(getScope(req), wsId, req.body);
+      if (data && 'name' in req.body) { this._logRenameWorkspaceEvents(req, data); }
+      return sendReply(req, res, {...result, data: data?.current.id});
     }));
 
     // DELETE /api/workspaces/:wid
     // Delete the specified workspace and all included docs.
     this._app.delete('/api/workspaces/:wid', expressWrap(async (req, res) => {
       const wsId = integerParam(req.params.wid, 'wid');
-      const query = await this._dbManager.deleteWorkspace(getScope(req), wsId);
-      return sendReply(req, res, query);
+      const {data, ...result} = await this._dbManager.deleteWorkspace(getScope(req), wsId);
+      if (data) { this._logDeleteWorkspaceEvents(req, data); }
+      return sendReply(req, res, {...result, data: data?.id});
     }));
 
     // POST /api/workspaces/:wid/remove
@@ -215,10 +236,12 @@ export class ApiServer {
     this._app.post('/api/workspaces/:wid/remove', expressWrap(async (req, res) => {
       const wsId = integerParam(req.params.wid, 'wid');
       if (isParameterOn(req.query.permanent)) {
-        const query = await this._dbManager.deleteWorkspace(getScope(req), wsId);
-        return sendReply(req, res, query);
+        const {data, ...result} = await this._dbManager.deleteWorkspace(getScope(req), wsId);
+        if (data) { this._logDeleteWorkspaceEvents(req, data); }
+        return sendReply(req, res, {...result, data: data?.id});
       } else {
-        await this._dbManager.softDeleteWorkspace(getScope(req), wsId);
+        const {data} = await this._dbManager.softDeleteWorkspace(getScope(req), wsId);
+        if (data) { this._logRemoveWorkspaceEvents(req, data); }
         return sendOkReply(req, res);
       }
     }));
@@ -228,7 +251,8 @@ export class ApiServer {
     // still available.
     this._app.post('/api/workspaces/:wid/unremove', expressWrap(async (req, res) => {
       const wsId = integerParam(req.params.wid, 'wid');
-      await this._dbManager.undeleteWorkspace(getScope(req), wsId);
+      const {data} = await this._dbManager.undeleteWorkspace(getScope(req), wsId);
+      if (data) { this._logRestoreWorkspaceEvents(req, data); }
       return sendOkReply(req, res);
     }));
 
@@ -236,24 +260,33 @@ export class ApiServer {
     // Create a new doc owned by the specific workspace.
     this._app.post('/api/workspaces/:wid/docs', expressWrap(async (req, res) => {
       const wsId = integerParam(req.params.wid, 'wid');
-      const query = await this._dbManager.addDocument(getScope(req), wsId, req.body);
-      return sendReply(req, res, query);
+      const {data, ...result} = await this._dbManager.addDocument(getScope(req), wsId, req.body);
+      if (data) { this._logCreateDocumentEvents(req, data); }
+      return sendReply(req, res, {...result, data: data?.id});
     }));
 
     // GET /api/templates/
-    // Get all templates (or only featured templates if `onlyFeatured` is set).
+    // Get all templates.
     this._app.get('/api/templates/', expressWrap(async (req, res) => {
       const templateOrg = getTemplateOrg();
       if (!templateOrg) {
-        throw new ApiError('Template org is not configured', 500);
+        throw new ApiError('Template org is not configured', 501);
       }
 
-      const onlyFeatured = isParameterOn(req.query.onlyFeatured);
-      const query = await this._dbManager.getOrgWorkspaces(
-        {...getScope(req), showOnlyPinned: onlyFeatured},
-        templateOrg
-      );
+      const query = await this._dbManager.getOrgWorkspaces(getScope(req), templateOrg);
       return sendReply(req, res, query);
+    }));
+
+    // GET /api/templates/:did
+    // Get information about a template.
+    this._app.get('/api/templates/:did', expressWrap(async (req, res) => {
+      const templateOrg = getTemplateOrg();
+      if (!templateOrg) {
+        throw new ApiError('Template org is not configured', 501);
+      }
+
+      const query = await this._dbManager.getDoc({...getScope(req), org: templateOrg});
+      return sendOkReply(req, res, query);
     }));
 
     // GET /api/widgets/
@@ -266,15 +299,30 @@ export class ApiServer {
     // PATCH /api/docs/:did
     // Update the specified doc.
     this._app.patch('/api/docs/:did', expressWrap(async (req, res) => {
-      const query = await this._dbManager.updateDocument(getDocScope(req), req.body);
-      return sendReply(req, res, query);
+      const validDocTypes = [
+        DOCTYPE_NORMAL,
+        DOCTYPE_TEMPLATE,
+        DOCTYPE_TUTORIAL
+      ];
+
+      if ('type' in req.body && ! validDocTypes.includes(req.body.type)){
+        const errMsg = "Bad Request. 'type' key authorized values : "
+                        + `'${DOCTYPE_TEMPLATE}', '${DOCTYPE_TUTORIAL}' or ${DOCTYPE_NORMAL}`;
+        return res.status(400).send({error: errMsg});
+      }
+
+      const {data, ...result} = await this._dbManager.updateDocument(getDocScope(req), req.body);
+
+      if (data && 'name' in req.body) { this._logRenameDocumentEvents(req, data); }
+      return sendReply(req, res, {...result, data: data?.current.id});
     }));
 
     // POST /api/docs/:did/unremove
     // Recover the specified doc if it was previously soft-deleted and is
     // still available.
     this._app.post('/api/docs/:did/unremove', expressWrap(async (req, res) => {
-      await this._dbManager.undeleteDocument(getDocScope(req));
+      const {data} = await this._dbManager.undeleteDocument(getDocScope(req));
+      if (data) { this._logRestoreDocumentEvents(req, data); }
       return sendOkReply(req, res);
     }));
 
@@ -283,8 +331,9 @@ export class ApiServer {
     this._app.patch('/api/orgs/:oid/access', expressWrap(async (req, res) => {
       const org = getOrgKey(req);
       const delta = req.body.delta;
-      const query = await this._dbManager.updateOrgPermissions(getScope(req), org, delta);
-      return sendReply(req, res, query);
+      const {data, ...result} = await this._dbManager.updateOrgPermissions(getScope(req), org, delta);
+      if (data) { this._logChangeSiteAccessEvents(req as RequestWithLogin, data); }
+      return sendReply(req, res, result);
     }));
 
     // PATCH /api/workspaces/:wid/access
@@ -292,8 +341,9 @@ export class ApiServer {
     this._app.patch('/api/workspaces/:wid/access', expressWrap(async (req, res) => {
       const workspaceId = integerParam(req.params.wid, 'wid');
       const delta = req.body.delta;
-      const query = await this._dbManager.updateWorkspacePermissions(getScope(req), workspaceId, delta);
-      return sendReply(req, res, query);
+      const {data, ...result} = await this._dbManager.updateWorkspacePermissions(getScope(req), workspaceId, delta);
+      if (data) { this._logChangeWorkspaceAccessEvents(req as RequestWithLogin, data); }
+      return sendReply(req, res, result);
     }));
 
     // GET /api/docs/:did
@@ -307,33 +357,38 @@ export class ApiServer {
     // Update the specified doc acl rules.
     this._app.patch('/api/docs/:did/access', expressWrap(async (req, res) => {
       const delta = req.body.delta;
-      const query = await this._dbManager.updateDocPermissions(getDocScope(req), delta);
-      return sendReply(req, res, query);
+      const {data, ...result} = await this._dbManager.updateDocPermissions(getDocScope(req), delta);
+      if (data) { this._logChangeDocumentAccessEvents(req, data); }
+      this._logInvitedDocUserTelemetryEvents(req, delta);
+      return sendReply(req, res, result);
     }));
 
     // PATCH /api/docs/:did/move
     // Move the doc to the workspace specified in the body.
     this._app.patch('/api/docs/:did/move', expressWrap(async (req, res) => {
-      const workspaceId = req.body.workspace;
-      const query = await this._dbManager.moveDoc(getDocScope(req), workspaceId);
-      return sendReply(req, res, query);
+      const workspaceId = integerParam(req.body.workspace, 'workspace');
+      const {data, ...result} = await this._dbManager.moveDoc(getDocScope(req), workspaceId);
+      if (data) { this._logMoveDocumentEvents(req, data); }
+      return sendReply(req, res, {...result, data: data?.current.id});
     }));
 
     this._app.patch('/api/docs/:did/pin', expressWrap(async (req, res) => {
-      const query = await this._dbManager.pinDoc(getDocScope(req), true);
-      return sendReply(req, res, query);
+      const {data, ...result} = await this._dbManager.pinDoc(getDocScope(req), true);
+      if (data) { this._logPinDocumentEvents(req, data); }
+      return sendReply(req, res, result);
     }));
 
     this._app.patch('/api/docs/:did/unpin', expressWrap(async (req, res) => {
-      const query = await this._dbManager.pinDoc(getDocScope(req), false);
-      return sendReply(req, res, query);
+      const {data, ...result} = await this._dbManager.pinDoc(getDocScope(req), false);
+      if (data) { this._logUnpinDocumentEvents(req, data); }
+      return sendReply(req, res, result);
     }));
 
     // GET /api/orgs/:oid/access
     // Get user access information regarding an org
     this._app.get('/api/orgs/:oid/access', expressWrap(async (req, res) => {
       const org = getOrgKey(req);
-      const query = await this._withSupportUserAllowedToView(
+      const query = await this._withPrivilegedViewForUser(
         org, req, (scope) => this._dbManager.getOrgAccess(scope, org)
       );
       return sendReply(req, res, query);
@@ -370,7 +425,8 @@ export class ApiServer {
         throw new ApiError('Name expected in the body', 400);
       }
       const name = req.body.name;
-      await this._dbManager.updateUserName(userId, name);
+      const {previous, current} = await this._dbManager.updateUser(userId, { name });
+      this._logChangeUserNameEvents(req, {previous, current});
       res.sendStatus(200);
     }));
 
@@ -451,6 +507,7 @@ export class ApiServer {
       if (!user) { return handleDeletedUser(); }
       if (!user.apiKey || force) {
         user = await updateApiKeyWithRetry(manager, user);
+        this._logCreateUserAPIKeyEvents(req, user);
         res.status(200).send(user.apiKey);
       } else {
         res.status(400).send({error: "An apikey is already set, use `{force: true}` to override it."});
@@ -466,6 +523,7 @@ export class ApiServer {
         if (!user) { return handleDeletedUser(); }
         user.apiKey = null;
         await manager.save(User, user);
+        this._logDeleteUserAPIKeyEvents(req, user);
       });
       res.sendStatus(200);
     }));
@@ -475,12 +533,15 @@ export class ApiServer {
     this._app.get('/api/session/access/active', expressWrap(async (req, res) => {
       const fullUser = await this._getFullUser(req, {includePrefs: true});
       const domain = getOrgFromRequest(req);
-      const org = domain ? (await this._withSupportUserAllowedToView(
+      const org = domain ? (await this._withPrivilegedViewForUser(
         domain, req, (scope) => this._dbManager.getOrg(scope, domain)
       )) : null;
       const orgError = (org && org.errMessage) ? {error: org.errMessage, status: org.status} : undefined;
       return sendOkReply(req, res, {
-        user: {...fullUser, helpScoutSignature: helpScoutSign(fullUser.email)},
+        user: {...fullUser,
+          helpScoutSignature: helpScoutSign(fullUser.email),
+          isInstallAdmin: await this._gristServer.getInstallAdmin().isAdminReq(req) || undefined,
+        },
         org: (org && org.data) || null,
         orgError
       });
@@ -492,7 +553,7 @@ export class ApiServer {
     // Sets active user for active org
     this._app.post('/api/session/access/active', expressWrap(async (req, res) => {
       const mreq = req as RequestWithLogin;
-      let domain = optStringParam(req.body.org);
+      let domain = optStringParam(req.body.org, 'org');
       if (!domain || domain === 'current') {
         domain = getOrgFromRequest(mreq) || '';
       }
@@ -534,8 +595,9 @@ export class ApiServer {
       if (!(req.body && req.body.name !== undefined)) {
         throw new ApiError('to confirm deletion of a user, provide their name', 400);
       }
-      const query = await this._dbManager.deleteUser(getScope(req), userIdToDelete, req.body.name);
-      return sendReply(req, res, query);
+      const {data, ...result} = await this._dbManager.deleteUser(getScope(req), userIdToDelete, req.body.name);
+      if (data) { this._logDeleteUserEvents(req, data); }
+      return sendReply(req, res, result);
     }));
   }
 
@@ -555,26 +617,437 @@ export class ApiServer {
 
 
   /**
-   * Run a query, and, if it is denied and the user is the support
+   * Run a query, and, if it is denied and the user is the support or admin
    * user, rerun the query with permission to view the current
-   * org. This is a bit inefficient, but only affects the support
+   * org. This is a bit inefficient, but only affects the support/admin
    * user. We wait to add the special permission only if needed, since
-   * it will in fact override any other access the support user has
+   * it will in fact override any other access the special user has
    * been granted, which could reduce their apparent access if that is
    * part of what is returned by the query.
    */
-  private async _withSupportUserAllowedToView<T>(
+  private async _withPrivilegedViewForUser<T>(
     org: string|number, req: express.Request,
     op: (scope: Scope) => Promise<QueryResult<T>>
   ): Promise<QueryResult<T>> {
     const scope = getScope(req);
     const userId = getUserId(req);
     const result = await op(scope);
-    if (result.status === 200 || userId !== this._dbManager.getSupportUserId()) {
+
+    if (result.status === 200) {
       return result;
     }
-    const extendedScope = addPermit(scope, this._dbManager.getSupportUserId(), {org});
-    return await op(extendedScope);
+
+    if (userId === this._dbManager.getSupportUserId() ||
+        await this._gristServer.getInstallAdmin()?.isAdminReq(req)) {
+      const extendedScope: Scope = {...scope, specialPermit: {org}};
+      return await op(extendedScope);
+    }
+    return result;
+  }
+
+  private _logCreateDocumentEvents(req: Request, document: Document) {
+    const mreq = req as RequestWithLogin;
+    this._gristServer.getAuditLogger().logEvent(mreq, {
+      action: "document.create",
+      context: {
+        site: pick(document.workspace.org, "id", "name", "domain"),
+      },
+      details: {
+        document: {
+          ...pick(document, "id", "name"),
+          workspace: pick(document.workspace, "id", "name"),
+        },
+      },
+    });
+    this._gristServer.getTelemetry().logEvent(mreq, 'documentCreated', {
+      limited: {
+        docIdDigest: document.id,
+        sourceDocIdDigest: undefined,
+        isImport: false,
+        fileType: undefined,
+        isSaved: true,
+      },
+      full: {
+        userId: mreq.userId,
+        altSessionId: mreq.altSessionId,
+      },
+    });
+    this._gristServer.getTelemetry().logEvent(mreq, 'createdDoc-Empty', {
+      full: {
+        docIdDigest: document.id,
+        userId: mreq.userId,
+        altSessionId: mreq.altSessionId,
+      },
+    });
+  }
+
+  private _logRenameDocumentEvents(
+    req: Request,
+    { previous, current }: PreviousAndCurrent<Document>
+  ) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "document.rename",
+      context: {
+        site: pick(current.workspace.org, "id", "name", "domain"),
+      },
+      details: {
+        previous: {
+          document: pick(previous, "id", "name"),
+        },
+        current: {
+          document: pick(current, "id", "name"),
+        },
+      },
+    });
+  }
+
+  private _logRestoreDocumentEvents(req: Request, document: Document) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "document.restore_from_trash",
+      context: {
+        site: pick(document.workspace.org, "id", "name", "domain"),
+      },
+      details: {
+        document: {
+          ...pick(document, "id", "name"),
+          workspace: pick(document.workspace, "id", "name"),
+        },
+      },
+    });
+  }
+
+  private _logChangeDocumentAccessEvents(
+    req: Request,
+    {
+      document,
+      accessChanges: { publicAccess, maxInheritedAccess, users },
+    }: DocumentAccessChanges
+  ) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "document.change_access",
+      context: {
+        site: pick(document.workspace.org, "id", "name", "domain"),
+      },
+      details: {
+        document: pick(document, "id", "name"),
+        access_changes: {
+          public_access: publicAccess,
+          max_inherited_access: maxInheritedAccess,
+          users,
+        },
+      },
+    });
+  }
+
+  private _logInvitedDocUserTelemetryEvents(req: Request, delta: PermissionDelta) {
+    if (!delta.users) { return; }
+
+    const mreq = req as RequestWithLogin;
+    const numInvitedUsersByAccess: Record<BasicRole, number> = {
+      'viewers': 0,
+      'editors': 0,
+      'owners': 0,
+    };
+    for (const [email, access] of Object.entries(delta.users)) {
+      if (email === 'everyone@getgrist.com') { continue; }
+      if (access === null || access === 'members') { continue; }
+
+      numInvitedUsersByAccess[access] += 1;
+    }
+    for (const [access, count] of Object.entries(numInvitedUsersByAccess)) {
+      if (count === 0) { continue; }
+
+      this._gristServer.getTelemetry().logEvent(mreq, 'invitedDocUser', {
+        full: {
+          access,
+          count,
+          userId: mreq.userId,
+        },
+      });
+    }
+
+    const publicAccess = delta.users['everyone@getgrist.com'];
+    if (publicAccess !== undefined) {
+      this._gristServer.getTelemetry().logEvent(
+        mreq,
+        publicAccess ? 'madeDocPublic' : 'madeDocPrivate',
+        {
+          full: {
+            ...(publicAccess ? {access: publicAccess} : {}),
+            userId: mreq.userId,
+          },
+        }
+      );
+    }
+  }
+
+  private _logMoveDocumentEvents(
+    req: Request,
+    { previous, current }: PreviousAndCurrent<Document>
+  ) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "document.move",
+      context: {
+        site: pick(current.workspace.org, "id", "name", "domain"),
+      },
+      details: {
+        previous: {
+          document: {
+            ...pick(previous, "id", "name"),
+            workspace: pick(previous.workspace, "id", "name"),
+          },
+        },
+        current: {
+          document: {
+            ...pick(current, "id", "name"),
+            workspace: pick(current.workspace, "id", "name"),
+          },
+        },
+      },
+    });
+  }
+
+  private _logPinDocumentEvents(req: Request, document: Document) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "document.pin",
+      context: {
+        site: pick(document.workspace.org, "id", "name", "domain"),
+      },
+      details: {
+        document: pick(document, "id", "name"),
+      },
+    });
+  }
+
+  private _logUnpinDocumentEvents(req: Request, document: Document) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "document.unpin",
+      context: {
+        site: pick(document.workspace.org, "id", "name", "domain"),
+      },
+      details: {
+        document: pick(document, "id", "name"),
+      },
+    });
+  }
+
+  private _logCreateWorkspaceEvents(req: Request, workspace: Workspace) {
+    const mreq = req as RequestWithLogin;
+    this._gristServer.getAuditLogger().logEvent(mreq, {
+      action: "workspace.create",
+      context: {
+        site: pick(workspace.org, "id", "name", "domain"),
+      },
+      details: {
+        workspace: pick(workspace, "id", "name"),
+      },
+    });
+    this._gristServer.getTelemetry().logEvent(mreq, 'createdWorkspace', {
+      full: {
+        workspaceId: workspace.id,
+        userId: mreq.userId,
+      },
+    });
+  }
+
+  private _logRenameWorkspaceEvents(
+    req: Request,
+    { previous, current }: PreviousAndCurrent<Workspace>
+  ) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "workspace.rename",
+      context: {
+        site: pick(current.org, "id", "name", "domain"),
+      },
+      details: {
+        previous: {
+          workspace: pick(previous, "id", "name"),
+        },
+        current: {
+          workspace: pick(current, "id", "name"),
+        },
+      },
+    });
+  }
+
+  private _logRemoveWorkspaceEvents(req: Request, workspace: Workspace) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "workspace.move_to_trash",
+      context: {
+        site: pick(workspace.org, "id", "name", "domain"),
+      },
+      details: {
+        workspace: pick(workspace, "id", "name"),
+      },
+    });
+  }
+
+  private _logDeleteWorkspaceEvents(req: Request, workspace: Workspace) {
+    const mreq = req as RequestWithLogin;
+    this._gristServer.getAuditLogger().logEvent(mreq, {
+      action: "workspace.delete",
+      context: {
+        site: pick(workspace.org, "id", "name", "domain"),
+      },
+      details: {
+        workspace: pick(workspace, "id", "name"),
+      },
+    });
+    this._gristServer.getTelemetry().logEvent(mreq, 'deletedWorkspace', {
+      full: {
+        workspaceId: workspace.id,
+        userId: mreq.userId,
+      },
+    });
+  }
+
+  private _logRestoreWorkspaceEvents(req: Request, workspace: Workspace) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "workspace.restore_from_trash",
+      context: {
+        site: pick(workspace.org, "id", "name", "domain"),
+      },
+      details: {
+        workspace: pick(workspace, "id", "name"),
+      },
+    });
+  }
+
+  private _logChangeWorkspaceAccessEvents(
+    req: RequestWithLogin,
+    {
+      workspace,
+      accessChanges: { maxInheritedAccess, users },
+    }: WorkspaceAccessChanges
+  ) {
+    this._gristServer.getAuditLogger().logEvent(req, {
+      action: "workspace.change_access",
+      context: {
+        site: pick(workspace.org, "id", "name", "domain"),
+      },
+      details: {
+        workspace: pick(workspace, "id", "name"),
+        access_changes: {
+          max_inherited_access: maxInheritedAccess,
+          users,
+        },
+      },
+    });
+  }
+
+  private _logCreateSiteEvents(req: Request, org: Organization) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "site.create",
+      details: {
+        site: pick(org, "id", "name", "domain"),
+      },
+    });
+  }
+
+  private _logRenameSiteEvents(
+    req: Request,
+    { previous, current }: PreviousAndCurrent<Organization>
+  ) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "site.rename",
+      context: {
+        site: pick(current, "id", "name", "domain"),
+      },
+      details: {
+        previous: {
+          site: pick(previous, "id", "name", "domain"),
+        },
+        current: {
+          site: pick(current, "id", "name", "domain"),
+        },
+      },
+    });
+  }
+
+  private _logDeleteSiteEvents(req: Request, org: Organization) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "site.delete",
+      details: {
+        site: pick(org, "id", "name", "domain"),
+      },
+    });
+  }
+
+  private _logChangeSiteAccessEvents(
+    req: RequestWithLogin,
+    { org, accessChanges: { users } }: OrgAccessChanges
+  ) {
+    this._gristServer.getAuditLogger().logEvent(req, {
+      action: "site.change_access",
+      context: {
+        site: pick(org, "id", "name", "domain"),
+      },
+      details: {
+        site: pick(org, "id", "name", "domain"),
+        access_changes: {
+          users,
+        },
+      },
+    });
+  }
+
+  private _logChangeUserNameEvents(
+    req: Request,
+    { previous, current }: PreviousAndCurrent<User>
+  ) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "user.change_name",
+      details: {
+        previous: {
+          user: {
+            ...pick(previous, "id", "name"),
+            email: previous.loginEmail,
+          },
+        },
+        current: {
+          user: {
+            ...pick(current, "id", "name"),
+            email: current.loginEmail,
+          },
+        },
+      },
+    });
+  }
+
+  private _logCreateUserAPIKeyEvents(req: Request, user: User) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "user.create_api_key",
+      details: {
+        user: {
+          ...pick(user, "id", "name"),
+          email: user.loginEmail,
+        },
+      },
+    });
+  }
+
+  private _logDeleteUserAPIKeyEvents(req: Request, user: User) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "user.delete_api_key",
+      details: {
+        user: {
+          ...pick(user, "id", "name"),
+          email: user.loginEmail,
+        },
+      },
+    });
+  }
+
+  private _logDeleteUserEvents(req: Request, user: User) {
+    this._gristServer.getAuditLogger().logEvent(req as RequestWithLogin, {
+      action: "user.delete",
+      details: {
+        user: {
+          ...pick(user, "id", "name"),
+          email: user.loginEmail,
+        },
+      },
+    });
   }
 }
 

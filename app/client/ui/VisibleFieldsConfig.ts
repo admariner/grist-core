@@ -5,7 +5,7 @@ import { makeT } from 'app/client/lib/localization';
 import * as tableUtil from 'app/client/lib/tableUtil';
 import { ColumnRec, ViewFieldRec, ViewSectionRec } from "app/client/models/DocModel";
 import { getFieldType } from "app/client/ui/RightPanel";
-import { IWidgetType } from "app/client/ui/widgetTypes";
+import { IWidgetType } from "../../common/widgetTypes";
 import { basicButton, cssButton, primaryButton } from 'app/client/ui2018/buttons';
 import * as checkbox from "app/client/ui2018/checkbox";
 import { theme, vars } from "app/client/ui2018/cssVars";
@@ -276,14 +276,7 @@ export class VisibleFieldsConfig extends Disposable {
   }
 
   public async removeField(field: IField) {
-    const existing = this._section.viewFields.peek().peek()
-      .find((f) => f.column.peek().getRowId() === field.origCol.peek().id.peek());
-    if (!existing) {
-      return;
-    }
-    const id = existing.id.peek();
-    const action = ['RemoveRecord', id];
-    await this._gristDoc.docModel.viewFields.sendTableAction(action);
+    await this._section.removeField(field.getRowId());
   }
 
   public async addField(column: IField, nextField: ViewFieldRec|null = null) {
@@ -447,7 +440,7 @@ function unselectDeletedFields(selection: Set<number>, event: {deleted: IField[]
 }
 
 export const cssDragRow = styled('div', `
-  display: flex !important;
+  display: flex;
   align-items: center;
   margin: 0 16px 0px 0px;
   & > .kf_draggable_content {

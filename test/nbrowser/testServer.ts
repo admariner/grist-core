@@ -11,7 +11,7 @@
  * into a file whose path is printed when server starts.
  */
 import {encodeUrl, IGristUrlState, parseSubdomain} from 'app/common/gristUrls';
-import {HomeDBManager} from 'app/gen-server/lib/HomeDBManager';
+import {HomeDBManager} from 'app/gen-server/lib/homedb/HomeDBManager';
 import log from 'app/server/lib/log';
 import {getAppRoot} from 'app/server/lib/places';
 import {makeGristConfig} from 'app/server/lib/sendAppPage';
@@ -67,6 +67,9 @@ export class TestServerMerged extends EventEmitter implements IMochaServer {
     this._starts++;
     const workerIdText = process.env.MOCHA_WORKER_ID || '0';
     if (reset) {
+      // Make sure this test server doesn't keep using the DB that's about to disappear.
+      await this.closeDatabase();
+
       if (process.env.TESTDIR) {
         this.testDir = path.join(process.env.TESTDIR, workerIdText);
       } else {
@@ -87,6 +90,10 @@ export class TestServerMerged extends EventEmitter implements IMochaServer {
     // immediately.  It is simplest to use a diffent socket each time
     // we restart.
     const testingSocket = path.join(this.testDir, `testing-${this._starts}.socket`);
+    if (testingSocket.length >= 104) {
+      // Unix socket paths typically can't be longer than this. Who knew. Make the error obvious.
+      throw new Error(`Path of testingSocket too long: ${testingSocket.length} (${testingSocket})`);
+    }
 
     const stubCmd = '_build/stubs/app/server/server';
     const isCore = await fse.pathExists(stubCmd + '.js');
@@ -116,7 +123,6 @@ export class TestServerMerged extends EventEmitter implements IMochaServer {
       GRIST_SERVE_SAME_ORIGIN: 'true',
       // Run with HOME_PORT, STATIC_PORT, DOC_PORT, DOC_WORKER_COUNT in the environment to override.
       ...(useSinglePort ? {
-        APP_HOME_URL: this.getHost(),
         GRIST_SINGLE_PORT: 'true',
       } : (isCore ? {
         HOME_PORT: corePort,
@@ -145,7 +151,10 @@ export class TestServerMerged extends EventEmitter implements IMochaServer {
       delete env.DOC_WORKER_COUNT;
     }
     this._server = spawn('node', [cmd], {
-      env,
+      env: {
+        ...env,
+        ...(process.env.SERVER_NODE_OPTIONS ? {NODE_OPTIONS: process.env.SERVER_NODE_OPTIONS} : {})
+      },
       stdio: quiet ? 'ignore' : ['inherit', serverLog, serverLog],
     });
     this._exitPromise = exitPromise(this._server);

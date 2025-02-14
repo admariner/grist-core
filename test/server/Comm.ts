@@ -2,27 +2,46 @@ import {Events as BackboneEvents} from 'backbone';
 import {promisifyAll} from 'bluebird';
 import {assert} from 'chai';
 import * as http from 'http';
-import {AddressInfo, Server, Socket} from 'net';
+import {AddressInfo} from 'net';
 import * as sinon from 'sinon';
-import WebSocket from 'ws';
 import * as path from 'path';
 import * as tmp from 'tmp';
 
 import {GristWSConnection, GristWSSettings} from 'app/client/components/GristWSConnection';
+import {GristClientSocket, GristClientSocketOptions} from 'app/client/components/GristClientSocket';
 import {Comm as ClientComm} from 'app/client/components/Comm';
 import * as log from 'app/client/lib/log';
-import {Comm, sendDocMessage} from 'app/server/lib/Comm';
+import {Comm} from 'app/server/lib/Comm';
 import {Client, ClientMethod} from 'app/server/lib/Client';
 import {CommClientConnect} from 'app/common/CommTypes';
 import {delay} from 'app/common/delay';
 import {isLongerThan} from 'app/common/gutil';
-import {connect as connectSock, fromCallback, getAvailablePort, listenPromise} from 'app/server/lib/serverUtils';
+import {fromCallback, listenPromise} from 'app/server/lib/serverUtils';
 import {Sessions} from 'app/server/lib/Sessions';
+import {TcpForwarder} from 'test/server/tcpForwarder';
 import * as testUtils from 'test/server/testUtils';
 import * as session from '@gristlabs/express-session';
+import { Hosts, RequestOrgInfo } from 'app/server/lib/extractOrg';
 
 const SQLiteStore = require('@gristlabs/connect-sqlite3')(session);
 promisifyAll(SQLiteStore.prototype);
+
+
+// Just enough implementation of Hosts to be able to fake using a custom host.
+class FakeHosts {
+
+  public isCustomHost = false;
+
+  public get asHosts() { return this as unknown as Hosts; }
+
+  public async addOrgInfo<T extends http.IncomingMessage>(req: T): Promise<T & RequestOrgInfo> {
+    return Object.assign(req, {
+      isCustomHost: this.isCustomHost,
+      org: "example",
+      url: req.url!
+    });
+  }
+}
 
 describe('Comm', function() {
 
@@ -33,6 +52,7 @@ describe('Comm', function() {
 
   let server: http.Server;
   let sessions: Sessions;
+  let fakeHosts: FakeHosts;
   let comm: Comm|null = null;
   const sandbox = sinon.createSandbox();
 
@@ -50,14 +70,19 @@ describe('Comm', function() {
 
   function startComm(methods: {[name: string]: ClientMethod}) {
     server = http.createServer();
-    comm = new Comm(server, {sessions});
+    fakeHosts = new FakeHosts();
+    comm = new Comm(server, {sessions, hosts: fakeHosts.asHosts});
     comm.registerMethods(methods);
     return listenPromise(server.listen(0, 'localhost'));
   }
 
   async function stopComm() {
     comm?.destroyAllClients();
-    return fromCallback(cb => server.close(cb));
+    await comm?.testServerShutdown();
+    await fromCallback(cb => {
+      server.close(cb);
+      server.closeAllConnections();
+    });
   }
 
   const assortedMethods: {[name: string]: ClientMethod} = {
@@ -72,20 +97,10 @@ describe('Comm', function() {
       return {x: x, y: y, name: "methodAsync"};
     },
     methodSend: async function(client, docFD) {
-      sendDocMessage(client, docFD, "fooType" as any, "foo");
-      sendDocMessage(client, docFD, "barType" as any, "bar");
+      void(client.sendMessage({docFD, type: "fooType" as any, data: "foo"}));
+      void(client.sendMessage({docFD, type: "barType" as any, data: "bar"}));
     }
   };
-
-  beforeEach(function() {
-    // Silence console messages from client-side Comm.ts.
-    if (!process.env.VERBOSE) {
-      // TODO: This no longer works, now that 'log' is a more proper "module" object rather than
-      // an arbitrary JS object. Also used in a couple other tests where logs are no longer
-      // silenced.
-      sandbox.stub(log, 'debug');
-    }
-  });
 
   afterEach(async function() {
     // Run the cleanup callbacks registered in cleanup().
@@ -94,34 +109,43 @@ describe('Comm', function() {
     sandbox.restore();
   });
 
-  function getMessages(ws: WebSocket, count: number): Promise<any[]> {
+  function getMessages(ws: GristClientSocket, count: number): Promise<any[]> {
     return new Promise((resolve, reject) => {
       const messages: object[] = [];
-      ws.on('error', reject);
-      ws.on('message', (msg: string) => {
-        messages.push(JSON.parse(msg));
+      ws.onerror = (err) => {
+        ws.onmessage = null;
+        reject(err);
+      };
+      ws.onmessage = (data: string) => {
+        messages.push(JSON.parse(data));
         if (messages.length >= count) {
+          ws.onerror = null;
+          ws.onmessage = null;
           resolve(messages);
-          ws.removeListener('error', reject);
-          ws.removeAllListeners('message');
         }
-      });
+      };
     });
   }
 
   /**
    * Returns a promise for the connected websocket.
    */
-  function connect() {
-    const ws = new WebSocket('ws://localhost:' + (server.address() as AddressInfo).port);
-    return new Promise<WebSocket>((resolve, reject) => {
-      ws.on('open', () => resolve(ws));
-      ws.on('error', reject);
+  function connect(options?: GristClientSocketOptions): Promise<GristClientSocket> {
+    const ws = new GristClientSocket('ws://localhost:' + (server.address() as AddressInfo).port, options);
+    return new Promise<GristClientSocket>((resolve, reject) => {
+      ws.onopen = () => {
+        ws.onerror = null;
+        resolve(ws);
+      };
+      ws.onerror = (err) => {
+        ws.onopen = null;
+        reject(err);
+      };
     });
   }
 
   describe("server methods", function() {
-    let ws: WebSocket;
+    let ws: GristClientSocket;
     beforeEach(async function() {
       await startComm(assortedMethods);
       ws = await connect();
@@ -184,6 +208,24 @@ describe('Comm', function() {
       });
       testUtils.assertMatchArray(logMessages, [
         /^warn: Client.* Unknown method.*someUnknownMethod/
+      ]);
+    });
+
+    it('should only log warning for malformed JSON data', async function () {
+      const logMessages  = await testUtils.captureLog('warn', async () => {
+        ws.send('foobar');
+      }, {waitForFirstLog: true});
+      testUtils.assertMatchArray(logMessages, [
+        /^warn: Client.* Unexpected token.*/
+      ]);
+    });
+
+    it('should log warning when null value is passed', async function () {
+      const logMessages  = await testUtils.captureLog('warn', async () => {
+        ws.send('null');
+      }, {waitForFirstLog: true});
+      testUtils.assertMatchArray(logMessages, [
+        /^warn: Client.*Cannot read properties of null*/
       ]);
     });
 
@@ -277,37 +319,49 @@ describe('Comm', function() {
     });
 
     async function testMissedResponses(sendShouldFail: boolean) {
-      const logMessages = await testUtils.captureLog('debug', async () => {
-        const {cliComm, forwarder} = await startManagedConnection({...assortedMethods,
-          // An extra method that simulates a lost connection on server side prior to response.
-          testDisconnect: async function(client, x, y) {
-            await delay(0);     //  disconnect on the same tick.
-            await forwarder.disconnectServerSide();
-            if (!sendShouldFail) {
-              // Add a delay to let the 'close' event get noticed first.
-              await delay(20);
-            }
-            return {x: x, y: y, name: "testDisconnect"};
-          },
-        });
+      let failedSendCount = 0;
 
-        const resp1 = await cliComm._makeRequest(null, null, "methodSync", "foo", 1);
-        assert.deepEqual(resp1, {name: 'methodSync', x: "foo", y: 1});
-
-        // Make more calls, with a disconnect before they return. The server should queue up responses.
-        const resp2Promise = cliComm._makeRequest(null, null, "testDisconnect", "foo", 2);
-        const resp3Promise = cliComm._makeRequest(null, null, "methodAsync", "foo", 3);
-        assert.equal(await isLongerThan(resp2Promise, 250), true);
-
-        // Once we reconnect, the response should arrive.
-        await forwarder.connect();
-        assert.deepEqual(await resp2Promise, {name: 'testDisconnect', x: "foo", y: 2});
-        assert.deepEqual(await resp3Promise, {name: 'methodAsync', x: "foo", y: 3});
+      const {cliComm, forwarder} = await startManagedConnection({...assortedMethods,
+        // An extra method that simulates a lost connection on server side prior to response.
+        testDisconnect: async function(client, x, y) {
+          setTimeout(() => forwarder.disconnectServerSide(), 0);
+          if (!sendShouldFail) {
+            // Add a delay to let the 'close' event get noticed first.
+            await delay(20);
+          }
+          return {x: x, y: y, name: "testDisconnect"};
+        },
       });
 
-      // Check that we saw the situations we were hoping to test.
-      assert.equal(logMessages.some(m => /^warn: .*send error.*WebSocket is not open/.test(m)), sendShouldFail,
-        `Expected to see a failed send:\n${logMessages.join('\n')}`);
+      const resp1 = await cliComm._makeRequest(null, null, "methodSync", "foo", 1);
+      assert.deepEqual(resp1, {name: 'methodSync', x: "foo", y: 1});
+
+      if (sendShouldFail) {
+        // In Node 18, the socket is closed during the call to 'testDisconnect'.
+        // In prior versions of Node, the socket was still disconnecting.
+        // This test is sensitive to timing and only passes in the latter, unless we
+        // stub the method below to produce similar behavior in the former.
+        sandbox.stub(Client.prototype as any, '_sendToWebsocket')
+          .onFirstCall()
+          .callsFake(() => {
+            failedSendCount += 1;
+            throw new Error('WebSocket is not open');
+          })
+          .callThrough();
+      }
+
+      // Make more calls, with a disconnect before they return. The server should queue up responses.
+      const resp2Promise = cliComm._makeRequest(null, null, "testDisconnect", "foo", 2);
+      const resp3Promise = cliComm._makeRequest(null, null, "methodAsync", "foo", 3);
+      assert.equal(await isLongerThan(resp2Promise, 250), true);
+
+      // Once we reconnect, the response should arrive.
+      await forwarder.connect();
+      assert.deepEqual(await resp2Promise, {name: 'testDisconnect', x: "foo", y: 2});
+      assert.deepEqual(await resp3Promise, {name: 'methodAsync', x: "foo", y: 3});
+
+      // Check that we saw the situation we were hoping to test.
+      assert.equal(failedSendCount, sendShouldFail ? 1 : 0, 'Expected to see a failed send');
     }
 
     it("should receive all server messages (small) in order when send doesn't fail", async function() {
@@ -338,19 +392,19 @@ describe('Comm', function() {
 
       // Intercept the call to _onClose to know when it occurs, since we are trying to hit a
       // situation where 'close' and 'failedSend' events happen in either order.
-      const stubOnClose = sandbox.stub(Client.prototype as any, '_onClose')
+      const stubOnClose: any = sandbox.stub(Client.prototype as any, '_onClose')
         .callsFake(function(this: Client) {
           eventsSeen.push('close');
-          return (stubOnClose as any).wrappedMethod.apply(this, arguments);
+          return stubOnClose.wrappedMethod.apply(this, arguments);
         });
 
       // Intercept calls to client.sendMessage(), to know when it fails, and possibly to delay the
       // failures to hit a particular order in which 'close' and 'failedSend' events are seen by
       // Client.ts. This is the only reliable way I found to reproduce this order of events.
-      const stubSendToWebsocket = sandbox.stub(Client.prototype as any, '_sendToWebsocket')
+      const stubSendToWebsocket: any = sandbox.stub(Client.prototype as any, '_sendToWebsocket')
         .callsFake(async function(this: Client) {
           try {
-            return await (stubSendToWebsocket as any).wrappedMethod.apply(this, arguments);
+            return await stubSendToWebsocket.wrappedMethod.apply(this, arguments);
           } catch (err) {
             if (options.closeHappensFirst) { await delay(100); }
             eventsSeen.push('failedSend');
@@ -431,6 +485,9 @@ describe('Comm', function() {
         if (options.useSmallMsgs) {
           assert.deepEqual(eventsSeen, ['close']);
         } else {
+          // Make sure to have waited long enough for the 'close' event we may have delayed
+          await delay(20);
+
           // Large messages now cause a send to fail, after filling up buffer, and close the socket.
           assert.deepEqual(eventsSeen, ['close', 'close']);
         }
@@ -459,17 +516,54 @@ describe('Comm', function() {
       assert.deepEqual(eventSpy.getCalls().map(call => call.args[0].n), [n - 1]);
     }
   });
+
+  describe("Allowed Origin", function() {
+    beforeEach(async function () {
+      await startComm(assortedMethods);
+    });
+
+    afterEach(async function() {
+      await stopComm();
+    });
+
+    async function checkOrigin(headers: { origin: string, host: string }, allowed: boolean) {
+      const promise = connect({ headers });
+      if (allowed) {
+        await assert.isFulfilled(promise, `${headers.host} should allow ${headers.origin}`);
+      } else {
+        await assert.isRejected(promise, /.*/, `${headers.host} should reject ${headers.origin}`);
+      }
+    }
+
+    it('origin should match base domain of host', async () => {
+      await checkOrigin({origin: "https://www.toto.com", host: "worker.example.com"}, false);
+      await checkOrigin({origin: "https://badexample.com", host: "worker.example.com"}, false);
+      await checkOrigin({origin: "https://bad.com/example.com", host: "worker.example.com"}, false);
+      await checkOrigin({origin: "https://front.example.com", host: "worker.example.com"}, true);
+      await checkOrigin({origin: "https://front.example.com:3000", host: "worker.example.com"}, true);
+      await checkOrigin({origin: "https://example.com", host: "example.com"}, true);
+    });
+
+    it('with custom domains, origin should match the full hostname', async () => {
+      fakeHosts.isCustomHost = true;
+
+      // For a request to a custom domain, the full hostname must match.
+      await checkOrigin({origin: "https://front.example.com", host: "worker.example.com"}, false);
+      await checkOrigin({origin: "https://front.example.com", host: "front.example.com"}, true);
+      await checkOrigin({origin: "https://front.example.com:3000", host: "front.example.com"}, true);
+    });
+  });
 });
 
 // Waits for condFunc() to return true, for up to timeoutMs milliseconds, sleeping for stepMs
-// between checks. Returns true if succeeded, false if failed.
-async function waitForCondition(condFunc: () => boolean, timeoutMs = 1000, stepMs = 10): Promise<boolean> {
+// between checks. Returns if succeeded, throws if failed.
+async function waitForCondition(condFunc: () => boolean, timeoutMs = 1000, stepMs = 10): Promise<void> {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
-    if (condFunc()) { return true; }
+    if (condFunc()) { return; }
     await delay(stepMs);
   }
-  return false;
+  throw new Error(`Condition not met after ${timeoutMs}ms: ${condFunc.toString()}`);
 }
 
 // Returns a range of count consecutive numbers starting with start.
@@ -482,7 +576,7 @@ function getWSSettings(docWorkerUrl: string): GristWSSettings {
   let clientId: string = 'clientid-abc';
   let counter: number = 0;
   return {
-    makeWebSocket(url: string): any { return new WebSocket(url, undefined, {}); },
+    makeWebSocket(url: string): any { return new GristClientSocket(url); },
     async getTimezone()         { return 'UTC'; },
     getPageUrl()                { return "http://localhost"; },
     async getDocWorkerUrl()     { return docWorkerUrl; },
@@ -493,63 +587,4 @@ function getWSSettings(docWorkerUrl: string): GristWSSettings {
     log()                       { (log as any).debug(...arguments); },
     warn()                      { (log as any).warn(...arguments); },
   };
-}
-
-// We'll test reconnects by making a connection through this TcpForwarder, which we'll use to
-// simulate disconnects.
-export class TcpForwarder {
-  public port: number|null = null;
-  private _connections = new Map<Socket, Socket>();
-  private _server: Server|null = null;
-
-  constructor(private _serverPort: number) {}
-
-  public async pickForwarderPort(): Promise<number> {
-    this.port = await getAvailablePort(5834);
-    return this.port;
-  }
-  public async connect() {
-    await this.disconnect();
-    this._server = new Server((sock) => this._onConnect(sock));
-    await listenPromise(this._server.listen(this.port));
-  }
-  public async disconnectClientSide() {
-    await Promise.all(Array.from(this._connections.keys(), destroySock));
-    if (this._server) {
-      await new Promise((resolve) => this._server!.close(resolve));
-      this._server = null;
-    }
-    this.cleanup();
-  }
-  public async disconnectServerSide() {
-    await Promise.all(Array.from(this._connections.values(), destroySock));
-    this.cleanup();
-  }
-  public async disconnect() {
-    await this.disconnectClientSide();
-    await this.disconnectServerSide();
-  }
-  public cleanup() {
-    const pairs = Array.from(this._connections.entries());
-    for (const [clientSock, serverSock] of pairs) {
-      if (clientSock.destroyed && serverSock.destroyed) {
-        this._connections.delete(clientSock);
-      }
-    }
-  }
-  private async _onConnect(clientSock: Socket) {
-    const serverSock = await connectSock(this._serverPort);
-    clientSock.pipe(serverSock);
-    serverSock.pipe(clientSock);
-    clientSock.on('error', (err) => serverSock.destroy(err));
-    serverSock.on('error', (err) => clientSock.destroy(err));
-    this._connections.set(clientSock, serverSock);
-  }
-}
-
-async function destroySock(sock: Socket): Promise<void> {
-  if (!sock.destroyed) {
-    await new Promise((resolve, reject) =>
-      sock.on('close', resolve).destroy());
-  }
 }

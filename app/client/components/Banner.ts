@@ -43,14 +43,14 @@ export interface BannerOptions {
   /**
    * If provided, applies the css class to the banner container.
    */
-   bannerCssClass?: string;
+  bannerCssClass?: string;
 
   /**
    * Function that is called when the banner close button is clicked.
    *
    * Should be used to handle disposal of the Banner.
    */
-   onClose?(): void;
+  onClose?(): void;
 }
 
 /**
@@ -121,7 +121,8 @@ const cssBanner = styled('div', `
   color: white;
 
   &-info {
-    color: black;
+    color: ${colors.dark};
+    --icon-color: ${colors.dark};
     background: #FFFACD;
   }
 
@@ -131,6 +132,16 @@ const cssBanner = styled('div', `
 
   &-error {
     background: ${colors.error};
+  }
+`);
+
+export const cssBannerLink = styled('span', `
+  cursor: pointer;
+  color: unset;
+  text-decoration: underline;
+
+  &:hover, &:focus {
+    color: unset;
   }
 `);
 

@@ -1,0 +1,5 @@
+{
+    "oidc": {
+        "emailNotVerifiedError": "请向身份提供商验证您的电子邮件，然后重新登录。"
+    }
+}

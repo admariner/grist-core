@@ -29,12 +29,12 @@ import {isHiddenTable, isSummaryTable} from 'app/common/isHiddenTable';
 import {canEdit} from 'app/common/roles';
 import {RowFilterFunc} from 'app/common/RowFilterFunc';
 import {schema, SchemaTypes} from 'app/common/schema';
-import {UIRowId} from 'app/common/TableData';
 import {ACLRuleRec, createACLRuleRec} from 'app/client/models/entities/ACLRuleRec';
 import {ColumnRec, createColumnRec} from 'app/client/models/entities/ColumnRec';
 import {createDocInfoRec, DocInfoRec} from 'app/client/models/entities/DocInfoRec';
 import {createFilterRec, FilterRec} from 'app/client/models/entities/FilterRec';
 import {createPageRec, PageRec} from 'app/client/models/entities/PageRec';
+import {createShareRec, ShareRec} from 'app/client/models/entities/ShareRec';
 import {createTabBarRec, TabBarRec} from 'app/client/models/entities/TabBarRec';
 import {createTableRec, TableRec} from 'app/client/models/entities/TableRec';
 import {createValidationRec, ValidationRec} from 'app/client/models/entities/ValidationRec';
@@ -45,6 +45,7 @@ import {CellRec, createCellRec} from 'app/client/models/entities/CellRec';
 import {RefListValue} from 'app/common/gristTypes';
 import {decodeObject} from 'app/plugin/objtypes';
 import {toKo} from 'grainjs';
+import {UIRowId} from 'app/plugin/GristAPI';
 
 // Re-export all the entity types available. The recommended usage is like this:
 //    import {ColumnRec, ViewFieldRec} from 'app/client/models/DocModel';
@@ -127,6 +128,7 @@ export class DocModel {
   public tabBar: MTM<TabBarRec> = this._metaTableModel("_grist_TabBar", createTabBarRec);
   public validations: MTM<ValidationRec> = this._metaTableModel("_grist_Validations", createValidationRec);
   public pages: MTM<PageRec> = this._metaTableModel("_grist_Pages", createPageRec);
+  public shares: MTM<ShareRec> = this._metaTableModel("_grist_Shares", createShareRec);
   public rules: MTM<ACLRuleRec> = this._metaTableModel("_grist_ACLRules", createACLRuleRec);
   public filters: MTM<FilterRec> = this._metaTableModel("_grist_Filters", createFilterRec);
   public cells: MTM<CellRec> = this._metaTableModel("_grist_Cells", createCellRec);
@@ -149,6 +151,7 @@ export class DocModel {
 
   public allTabs: KoArray<TabBarRec> = this.tabBar.createAllRowsModel('tabPos');
 
+  public allPages: ko.Computed<PageRec[]>;
   /** Pages that are shown in the menu. These can include censored pages if they have children. */
   public menuPages: ko.Computed<PageRec[]>;
   // Excludes pages hidden by ACL rules or other reasons (e.g. doc-tour)
@@ -217,26 +220,36 @@ export class DocModel {
 
     // Get a list of only the visible pages.
     const allPages = this.pages.createAllRowsModel('pagePos');
+    this.allPages = ko.computed(() => allPages.all());
     this.menuPages = ko.computed(() => {
-      const pagesToShow = allPages.all().filter(p => !p.isSpecial()).sort((a, b) => a.pagePos() - b.pagePos());
-      // Helper to find all children of a page.
-      const children = memoize((page: PageRec) => {
-        const following = pagesToShow.slice(pagesToShow.indexOf(page) + 1);
-        const firstOutside = following.findIndex(p => p.indentation() <= page.indentation());
-        return firstOutside >= 0 ? following.slice(0, firstOutside) : following;
+      const pagesToShow = this.allPages().filter(p => !p.isSpecial()).sort((a, b) => a.pagePos() - b.pagePos());
+      const parent = memoize((page: PageRec) => {
+        const myIdentation = page.indentation();
+        if (myIdentation === 0) { return null; }
+        const idx = pagesToShow.indexOf(page);
+        // Find first page starting from before that has lower indentation then mine.
+        const beforeMe = pagesToShow.slice(0, idx).reverse();
+        return beforeMe.find(p => p.indentation() < myIdentation) ?? null;
       });
-      // Helper to test if the page is hidden and all its children are hidden.
-      // In that case, we won't show it at all.
-      const hide = memoize((page: PageRec): boolean => page.isCensored() && children(page).every(p => hide(p)));
-      return pagesToShow.filter(p => !hide(p));
+      const ancestors = memoize((page: PageRec): PageRec[] => {
+        const anc = parent(page);
+        return anc ? [anc, ...ancestors(anc)] : [];
+      });
+      // Helper to test if the page is hidden or is in a hidden branch.
+      const hidden = memoize((page: PageRec): boolean => page.isHidden() || ancestors(page).some(p => p.isHidden()));
+      return pagesToShow.filter(p => !hidden(p));
     });
-    this.visibleDocPages = ko.computed(() => allPages.all().filter(p => !p.isHidden()));
+    this.visibleDocPages = ko.computed(() => this.allPages().filter(p => !p.isHidden()));
 
     this.hasDocTour = ko.computed(() => this.visibleTableIds.all().includes('GristDocTour'));
 
     this.isTutorial = ko.computed(() =>
       toKo(ko, this._docPageModel.isTutorialFork)()
       && this.allTableIds.all().includes('GristDocTutorial'));
+  }
+
+  public getTableModel(tableId: string) {
+    return this.dataTables[tableId];
   }
 
   private _metaTableModel<TName extends keyof SchemaTypes, TRow extends IRowModel<TName>>(

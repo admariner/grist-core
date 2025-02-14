@@ -1,3 +1,5 @@
+import {makeT} from 'app/client/lib/localization';
+import {logTelemetryEvent} from 'app/client/lib/telemetry';
 import {AppModel} from 'app/client/models/AppModel';
 import {bigBasicButton, bigPrimaryButtonLink} from 'app/client/ui2018/buttons';
 import {testId, theme, vars} from 'app/client/ui2018/cssVars';
@@ -6,19 +8,17 @@ import {cardPopup, cssPopupBody, cssPopupButtons, cssPopupCloseButton,
 import {icon} from 'app/client/ui2018/icons';
 import {getGristConfig} from 'app/common/urlUtils';
 import {dom, styled} from 'grainjs';
+import { commonUrls } from 'app/common/gristUrls';
 
-const FREE_COACHING_CALL_URL = 'https://calendly.com/grist-team/grist-free-coaching-call';
+const t = makeT('WelcomeCoachingCall');
 
 export function shouldShowWelcomeCoachingCall(appModel: AppModel) {
   const {deploymentType} = getGristConfig();
   if (deploymentType !== 'saas') { return false; }
 
-  const {behavioralPromptsManager, dismissedWelcomePopups} = appModel;
-
   // Defer showing coaching call until Add New tip is dismissed.
-  const hasSeenAddNewTip = behavioralPromptsManager.hasSeenTip('addNew');
-  const shouldShowTips = behavioralPromptsManager.shouldShowTips();
-  if (!hasSeenAddNewTip && shouldShowTips) { return false; }
+  const {behavioralPromptsManager, dismissedWelcomePopups} = appModel;
+  if (behavioralPromptsManager.shouldShowPopup('addNew')) { return false; }
 
   const popup = dismissedWelcomePopups.get().find(p => p.id === 'coachingCall');
   return (
@@ -65,7 +65,6 @@ export function showWelcomeCoachingCall(triggerElement: Element, appModel: AppMo
       ctl.close();
     };
 
-    // TODO: i18n
     return [
       cssPopup.cls(''),
       cssPopupHeader(
@@ -79,32 +78,39 @@ export function showWelcomeCoachingCall(triggerElement: Element, appModel: AppMo
           testId('popup-close-button'),
         ),
       ),
-      cssPopupTitle('Free Coaching Call', testId('popup-title')),
+      cssPopupTitle(t('free coaching call'),
+        dom.style('text-transform', 'capitalize'),
+        testId('popup-title')
+      ),
       cssPopupBody(
         cssBody(
           dom('div',
-            'Schedule your ', cssBoldText('free coaching call'), ' with a member of our team.'
+            t('Schedule your {{freeCoachingCall}} with a member of our team.',
+              {freeCoachingCall: cssBoldText(t('free coaching call'))}
+            )
           ),
           dom('div',
-            "On the call, we'll take the time to understand your needs and "
-            + 'tailor the call to you. We can show you the Grist basics, or start '
-            + 'working with your data right away to build the dashboards you need.'
+            t("On the call, we'll take the time to understand your needs and tailor the call to you. \
+We can show you the Grist basics, or start working with your data right away to build the dashboards you need.")
           ),
         ),
         testId('popup-body'),
       ),
       cssPopupButtons(
         bigPrimaryButtonLink(
-          'Schedule Call',
-          dom.on('click', () => dismissPopup(false)),
+          t('Schedule Call'),
+          dom.on('click', () => {
+            dismissPopup(false);
+            logTelemetryEvent('clickedScheduleCoachingCall');
+          }),
           {
-            href: FREE_COACHING_CALL_URL,
+            href: commonUrls.freeCoachingCall,
             target: '_blank',
           },
           testId('popup-primary-button'),
         ),
         bigBasicButton(
-          'Maybe Later',
+          t('Maybe Later'),
           dom.on('click', () => dismissPopup(true)),
           testId('popup-basic-button'),
         ),

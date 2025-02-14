@@ -1,13 +1,7 @@
 import {HomeModel} from 'app/client/models/HomeModel';
-import {shouldShowWelcomeQuestions} from 'app/client/ui/WelcomeQuestions';
 
 export function attachAddNewTip(home: HomeModel): (el: Element) => void {
   return () => {
-    const {app: {userPrefsObs}} = home;
-    if (shouldShowWelcomeQuestions(userPrefsObs)) {
-      return;
-    }
-
     if (shouldShowAddNewTip(home)) {
       showAddNewTip(home);
     }
@@ -20,8 +14,10 @@ function shouldShowAddNewTip(home: HomeModel): boolean {
     home.app.isOwnerOrEditor() &&
     // And the tip hasn't been shown before.
     home.shouldShowAddNewTip.get() &&
-    // And the intro isn't being shown.
-    !home.showIntro.get() &&
+    // And the site isn't empty.
+    !home.empty.get() &&
+    // And home page cards aren't being shown.
+    !(home.currentPage.get() === 'all' && !home.onlyShowDocuments.get()) &&
     // And the workspace loaded correctly.
     home.available.get() &&
     // And the current page isn't /p/trash; the Add New button is limited there.
@@ -39,7 +35,7 @@ function showAddNewTip(home: HomeModel): void {
     return;
   }
 
-  home.app.behavioralPromptsManager.showTip(addNewButton, 'addNew', {
+  home.app.behavioralPromptsManager.showPopup(addNewButton, 'addNew', {
     popupOptions: {
       placement: 'right-start',
     },

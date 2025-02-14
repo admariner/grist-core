@@ -9,7 +9,10 @@ import {icon} from 'app/client/ui2018/icons';
 import {cssModalTooltip, modalTooltip} from 'app/client/ui2018/modals';
 import {dom, DomContents, keyframes, observable, styled, svg} from 'grainjs';
 import {IPopupOptions} from 'popweasel';
+import {makeT} from 'app/client/lib/localization';
 import merge = require('lodash/merge');
+
+const t = makeT('modals');
 
 /**
  * This is a file for all custom and pre-configured popups, modals, toasts and tooltips, used
@@ -35,19 +38,21 @@ export function buildConfirmDelete(
         Escape: () => ctl.close(),
         Enter: () => { onSave(remember.get()); ctl.close(); },
       }),
-      dom('div', `Are you sure you want to delete ${single ? 'this' : 'these'} record${single ? '' : 's'}?`,
+      dom('div', single ?
+        t(`Are you sure you want to delete this record?`)
+        : t(`Are you sure you want to delete these records?`),
         dom.style('margin-bottom', '10px'),
       ),
       dom('div',
-        labeledSquareCheckbox(remember, "Don't ask again.", testId('confirm-remember')),
+        labeledSquareCheckbox(remember, t("Don't ask again."), testId('confirm-remember')),
         dom.style('margin-bottom', '10px'),
       ),
       cssButtons(
-        primaryButton('Delete', testId('confirm-save'), dom.on('click', () => {
+        primaryButton(t('Delete'), testId('confirm-save'), dom.on('click', () => {
           onSave(remember.get());
           ctl.close();
         })),
-        basicButton('Cancel', testId('confirm-cancel'), dom.on('click', () => ctl.close()))
+        basicButton(t('Cancel'), testId('confirm-cancel'), dom.on('click', () => ctl.close()))
       )
     ), {}
   );
@@ -81,9 +86,9 @@ export function showDeprecatedWarning(
         dom.style('justify-content', 'space-between'),
         dom.style('align-items', 'center'),
         dom('div',
-          labeledSquareCheckbox(remember, "Don't show again.", testId('confirm-remember')),
+          labeledSquareCheckbox(remember, t("Don't show again."), testId('confirm-remember')),
         ),
-        basicButton('Dismiss', testId('confirm-save'),
+        basicButton(t('Dismiss'), testId('confirm-save'),
           dom.on('click', () => { ctl.close(); onClose(remember.get()); })
         )
       ),
@@ -105,7 +110,7 @@ export function showDeprecatedWarning(
 export function reportUndo(
   doc: GristDoc,
   messageLabel: string,
-  buttonLabel = 'Undo to restore'
+  buttonLabel = t('Undo to restore')
 ) {
   // First create a notification with a button to undo the delete.
   let notification = reportSuccess(messageLabel, {
@@ -134,7 +139,7 @@ export function reportUndo(
   }
 }
 
-export interface ShowBehavioralPromptOptions {
+export interface ShowTipPopupOptions {
   onClose: (dontShowTips: boolean) => void;
   /** Defaults to false. */
   hideArrow?: boolean;
@@ -143,11 +148,11 @@ export interface ShowBehavioralPromptOptions {
   popupOptions?: IPopupOptions;
 }
 
-export function showBehavioralPrompt(
+export function showTipPopup(
   refElement: Element,
   title: string,
   content: DomContents,
-  options: ShowBehavioralPromptOptions
+  options: ShowTipPopupOptions
 ) {
   const {onClose, hideArrow = false, hideDontShowTips = false, popupOptions} = options;
   const arrow = hideArrow ? null : buildArrow();
@@ -167,7 +172,7 @@ export function showBehavioralPrompt(
         cssBehavioralPromptHeader(
           cssHeaderIconAndText(
             icon('Idea'),
-            cssHeaderText('TIP'),
+            cssHeaderText(t('TIP')),
           ),
         ),
         cssBehavioralPromptBody(
@@ -179,30 +184,19 @@ export function showBehavioralPrompt(
             dom.style('align-items', 'center'),
             dom('div',
               cssSkipTipsCheckbox(dontShowTips,
-                cssSkipTipsCheckboxLabel("Don't show tips"),
+                cssSkipTipsCheckboxLabel(t("Don't show tips")),
                 testId('behavioral-prompt-dont-show-tips')
               ),
               dom.style('visibility', hideDontShowTips ? 'hidden' : ''),
             ),
-            cssDismissPromptButton('Got it', testId('behavioral-prompt-dismiss'),
+            cssDismissPromptButton(t('Got it'), testId('behavioral-prompt-dismiss'),
               dom.on('click', () => { onClose(dontShowTips.get()); ctl.close(); })
             ),
           ),
         ),
       ),
     ],
-    merge(popupOptions, {
-      modifiers: {
-        ...(arrow ? {arrow: {element: arrow}}: {}),
-        offset: {
-          offset: '0,12',
-        },
-        preventOverflow: {
-          boundariesElement: 'window',
-          padding: 32,
-        },
-      }
-    })
+    merge({}, defaultPopupOptions, popupOptions),
   );
   dom.onDisposeElem(refElement, () => {
     if (!tooltip.isDisposed()) {
@@ -211,6 +205,64 @@ export function showBehavioralPrompt(
   });
   return tooltip;
 }
+
+export interface ShowNewsPopupOptions {
+  popupOptions?: IPopupOptions;
+}
+
+export function showNewsPopup(
+  refElement: Element,
+  title: string,
+  content: DomContents,
+  options: ShowNewsPopupOptions = {}
+) {
+  const {popupOptions} = options;
+  const popup = modalTooltip(refElement,
+    (ctl) => [
+      cssNewsPopupModal.cls(''),
+      cssNewsPopupContainer(
+        testId('behavioral-prompt'),
+        elem => { FocusLayer.create(ctl, {defaultFocusElem: elem, pauseMousetrap: true}); },
+        dom.onKeyDown({
+          Escape: () => { ctl.close(); },
+          Enter: () => { ctl.close(); },
+        }),
+        cssNewsPopupCloseButton(
+          icon('CrossBig'),
+          dom.on('click', () => ctl.close()),
+          testId('behavioral-prompt-dismiss'),
+        ),
+        cssNewsPopupBody(
+          cssNewsPopupTitle(title, testId('behavioral-prompt-title')),
+          content,
+        ),
+      ),
+    ],
+    merge({}, defaultPopupOptions, popupOptions),
+  );
+  dom.onDisposeElem(refElement, () => {
+    if (!popup.isDisposed()) {
+      popup.close();
+    }
+  });
+  return popup;
+}
+
+const defaultPopupOptions = {
+  modifiers: {
+    offset: {
+      offset: '0,12',
+    },
+    preventOverflow: {
+      boundariesElement: 'window',
+      padding: 32,
+    },
+    computeStyle: {
+      // GPU acceleration makes text look blurry.
+      gpuAcceleration: false,
+    },
+  }
+};
 
 function buildArrow() {
   return cssArrowContainer(
@@ -269,10 +321,12 @@ const cssArrowContainer = styled('div', `
 
   ${sideSelectorChunk('top')} > & {
     bottom: -17px;
+    margin: 0px 16px;
   }
 
   ${sideSelectorChunk('bottom')} > & {
     top: -14px;
+    margin: 0px 16px;
   }
 
   ${sideSelectorChunk('right')} > & {
@@ -350,13 +404,22 @@ const cssBehavioralPromptModal = styled('div', `
 
   @media ${mediaXSmall} {
     & {
-      width: 320px;
+      /* Allocate 32px of space for the left and right margins. */
+      width: calc(100% - 64px);
     }
   }
 `);
 
+const cssNewsPopupModal = cssBehavioralPromptModal;
+
 const cssBehavioralPromptContainer = styled(cssTheme, `
   line-height: 18px;
+`);
+
+const cssNewsPopupContainer = styled('div', `
+  background: linear-gradient(to right, #29a3a3, #16a772);
+  color: white;
+  border-radius: 4px;
 `);
 
 const cssBehavioralPromptHeader = styled('div', `
@@ -370,6 +433,12 @@ const cssBehavioralPromptHeader = styled('div', `
 `);
 
 const cssBehavioralPromptBody = styled('div', `
+  padding: 16px;
+`);
+
+const cssNewsPopupBody = styled('div', `
+  font-size: 14px;
+  line-height: 23px;
   padding: 16px;
 `);
 
@@ -393,6 +462,27 @@ const cssBehavioralPromptTitle = styled('div', `
   color: ${theme.text};
   margin: 0 0 16px 0;
   line-height: 32px;
+`);
+
+const cssNewsPopupTitle = styled('div', `
+  font-size: ${vars.xxxlargeFontSize};
+  font-weight: ${vars.headerControlTextWeight};
+  margin: 0 0 16px 0;
+  line-height: 32px;
+`);
+
+const cssNewsPopupCloseButton = styled('div', `
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  --icon-color: white;
+
+  &:hover {
+    background-color: ${theme.hover};
+  }
 `);
 
 const cssSkipTipsCheckbox = styled(labeledSquareCheckbox, `

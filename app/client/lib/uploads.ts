@@ -31,7 +31,7 @@ export interface SelectFileOptions extends UploadOptions {
                           // e.g. [".jpg", ".png"]
 }
 
-export const IMPORTABLE_EXTENSIONS = [".grist", ".csv", ".tsv", ".txt", ".xlsx", ".xlsm"];
+export const IMPORTABLE_EXTENSIONS = [".grist", ".csv", ".tsv", ".dsv", ".txt", ".xlsx", ".xlsm"];
 
 /**
  * Shows the file-picker dialog with the given options, and uploads the selected files. If under
@@ -48,12 +48,17 @@ export async function selectFiles(options: SelectFileOptions,
   if (typeof electronSelectFiles === 'function') {
     result = await electronSelectFiles(getElectronOptions(options));
   } else {
-    const files: File[] = await openFilePicker(getFileDialogOptions(options));
-    result = await uploadFiles(files, options, onProgress);
+    result = await uploadFiles(await selectPicker(options), options, onProgress);
   }
   onProgress(100);
   return result;
 }
+
+export async function selectPicker(options: SelectFileOptions) {
+  const files: File[] = await openFilePicker(getFileDialogOptions(options));
+  return files;
+}
+
 
 // Helper to convert SelectFileOptions to the browser's FileDialogOptions.
 function getFileDialogOptions(options: SelectFileOptions): FileDialogOptions {

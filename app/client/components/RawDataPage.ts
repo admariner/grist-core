@@ -4,12 +4,14 @@ import {DocumentUsage} from 'app/client/components/DocumentUsage';
 import {GristDoc} from 'app/client/components/GristDoc';
 import {printViewSection} from 'app/client/components/Printing';
 import {ViewSectionHelper} from 'app/client/components/ViewLayout';
-import {mediaSmall, theme} from 'app/client/ui2018/cssVars';
+import {logTelemetryEvent} from 'app/client/lib/telemetry';
+import {mediaSmall, theme, vars} from 'app/client/ui2018/cssVars';
 import {icon} from 'app/client/ui2018/icons';
 import {Computed, Disposable, dom, fromKo, makeTestId, Observable, styled} from 'grainjs';
 import {reportError} from 'app/client/models/errors';
 import {ViewSectionRec} from 'app/client/models/DocModel';
 import {buildViewSectionDom} from 'app/client/components/buildViewSectionDom';
+import {getTelemetryWidgetTypeFromVS} from 'app/client/ui/widgetTypesMap';
 
 const testId = makeTestId('test-raw-data-');
 
@@ -23,7 +25,7 @@ export class RawDataPage extends Disposable {
     this.autoDispose(commands.createGroup(commandGroup, this, true));
     this._lightboxVisible = Computed.create(this, use => {
       const section = use(this._gristDoc.viewModel.activeSection);
-      return Boolean(use(section.id)) && use(section.isRaw);
+      return Boolean(use(section.id)) && (use(section.isRaw) || use(section.isRecordCard));
     });
     // When we are disposed, we want to clear active section in the viewModel we got (which is an empty model)
     // to not restore the section when user will come back to Raw Data page.
@@ -44,7 +46,7 @@ export class RawDataPage extends Disposable {
   public buildDom() {
     return cssContainer(
       cssPage(
-        dom('div', this._gristDoc.behavioralPromptsManager.attachTip('rawDataPage', {hideArrow: true})),
+        dom('div', this._gristDoc.behavioralPromptsManager.attachPopup('rawDataPage', {hideArrow: true})),
         dom('div',
           dom.create(DataTables, this._gristDoc),
           dom.create(DocumentUsage, this._gristDoc.docPageModel)
@@ -55,7 +57,7 @@ export class RawDataPage extends Disposable {
       /***************  Lightbox section **********/
       dom.domComputed(fromKo(this._gristDoc.viewModel.activeSection), (viewSection) => {
         const sectionId = viewSection.getRowId();
-        if (!sectionId || !viewSection.isRaw.peek()) {
+        if (!sectionId || (!viewSection.isRaw.peek() && !viewSection.isRecordCard.peek())) {
           return null;
         }
         return dom.create(RawDataPopup, this._gristDoc, viewSection, () => this._close());
@@ -82,6 +84,10 @@ export class RawDataPopup extends Disposable {
         if (this._viewSection.isRaw.peek()) {
           throw new Error("Can't delete a raw section");
         }
+
+        const widgetType = getTelemetryWidgetTypeFromVS(this._viewSection);
+        logTelemetryEvent('deletedWidget', {full: {docIdDigest: this._gristDoc.docId(), widgetType}});
+
         this._gristDoc.docData.sendAction(['RemoveViewSection', this._viewSection.id.peek()]).catch(reportError);
       },
     };
@@ -97,7 +103,9 @@ export class RawDataPopup extends Disposable {
           sectionRowId: this._viewSection.getRowId(),
           draggable: false,
           focusable: false,
-          widgetNameHidden: this._viewSection.isRaw.peek(), // We are sometimes used for non raw sections.
+          // Expanded, non-raw widgets are also rendered in RawDataPopup.
+          widgetNameHidden: this._viewSection.isRaw.peek(),
+          renamable: !this._viewSection.isRecordCard.peek(),
         })
       ),
       cssCloseButton('CrossBig',
@@ -113,7 +121,8 @@ export class RawDataPopup extends Disposable {
 const cssContainer = styled('div', `
   height: 100%;
   overflow: hidden;
-  position: relative;
+  inset: 0px;
+  position: absolute;
 `);
 
 const cssPage = styled('div', `
@@ -127,13 +136,12 @@ const cssPage = styled('div', `
   }
 `);
 
-const cssOverlay = styled('div', `
+export const cssOverlay = styled('div', `
   background-color: ${theme.modalBackdrop};
   inset: 0px;
-  height: 100%;
-  width: 100%;
   padding: 20px 56px 20px 56px;
   position: absolute;
+  z-index: ${vars.popupSectionBackdropZIndex};
   @media ${mediaSmall} {
     & {
       padding: 22px;
@@ -152,7 +160,7 @@ const cssSectionWrapper = styled('div', `
   border-bottom-right-radius: 0px;
   & .viewsection_content {
     margin: 0px;
-    margin-top: 12px;
+    margin-top: 8px;
   }
   & .viewsection_title {
     padding: 0px 12px;
@@ -162,7 +170,7 @@ const cssSectionWrapper = styled('div', `
   }
 `);
 
-const cssCloseButton = styled(icon, `
+export const cssCloseButton = styled(icon, `
   position: absolute;
   top: 16px;
   right: 16px;

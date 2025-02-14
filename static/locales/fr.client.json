@@ -1,7 +1,7 @@
 {
     "ACUserManager": {
         "Invite new member": "Inviter un nouveau membre",
-        "Enter email address": "Entrer votre adresse e-mail",
+        "Enter email address": "Entrer l'adresse e-mail",
         "We'll email an invite to {{email}}": "Nous allons envoyer une invitation à {{email}}"
     },
     "AccessRules": {
@@ -9,7 +9,7 @@
         "Saved": "Enregistré",
         "Invalid": "Invalide",
         "Save": "Enregistrer",
-        "Reset": "Réinitialiser",
+        "Reset": "Annuler",
         "Add Table Rules": "Ajouter des règles pour la table",
         "Add User Attributes": "Ajouter des propriétés d'utilisateur",
         "Users": "Utilisateurs",
@@ -39,10 +39,11 @@
         "View As": "Voir en tant que",
         "Remove column {{- colId }} from {{- tableId }} rules": "Supprimer la colonne {{-colId}} des règles de la table {{-tableId}}",
         "Seed rules": "Règles par défaut",
-        "When adding table rules, automatically add a rule to grant OWNER full access.": "Ajouter automatiquement une règle donnant tous les droits au groupe OWNER.",
+        "When adding table rules, automatically add a rule to grant OWNER full access.": "Pour chaque ajout de règle pour une table, ajouter automatiquement une règle donnant tous les droits au groupe OWNER.",
         "Permission to edit document structure": "Droits d'édition de la structure",
         "This default should be changed if editors' access is to be limited. ": "Cette valeur par défaut doit être modifiée si l'on souhaite limiter l'accès des éditeurs. ",
-        "Allow editors to edit structure (e.g. modify and delete tables, columns, layouts), and to write formulas, which give access to all data regardless of read restrictions.": "Autorise les éditeurs à éditer la structure (modifier/supprimer des tables, colonnes, mises en page...) et à écrire des formules, ce qui donne accès à l'ensemble des données sans prendre en compte d'éventuelles restrictions de droits de lecture."
+        "Allow editors to edit structure (e.g. modify and delete tables, columns, layouts), and to write formulas, which give access to all data regardless of read restrictions.": "Autorise les éditeurs à éditer la structure (modifier/supprimer des tables, colonnes, mises en page) et à écrire des formules, ce qui donne accès à l'ensemble des données sans prendre en compte d'éventuelles restrictions de droits de lecture.",
+        "Add Table-wide Rule": "Ajouter une règle pour l'ensemble du tableau"
     },
     "AccountPage": {
         "Account settings": "Paramètres du compte",
@@ -51,15 +52,15 @@
         "Email": "E-mail",
         "Name": "Nom",
         "Save": "Enregistrer",
-        "Password & Security": "Mot de passe & Sécurité",
+        "Password & Security": "Mot de passe et sécurité",
         "Login Method": "Mode de connexion",
         "Change Password": "Modifier le mot de passe",
         "Allow signing in to this account with Google": "Autoriser la connexion à ce compte avec Google",
         "Two-factor authentication": "Authentification à deux facteurs",
-        "Two-factor authentication is an extra layer of security for your Grist account designed to ensure that you're the only person who can access your account, even if someone knows your password.": "L'authentification à double facteur est une couche additionnelle de sécurité pour votre compte Grist qui permet de s'assurer que vous êtes la seule personne qui peut accéder à votre compte, même si quelqu'un d'autre connaît votre mot de passe.",
+        "Two-factor authentication is an extra layer of security for your Grist account designed to ensure that you're the only person who can access your account, even if someone knows your password.": "L'authentification à double facteur est une couche supplémentaire de sécurité pour votre compte Grist qui permet de s'assurer que vous êtes la seule personne qui peut accéder à votre compte, même si quelqu'un d'autre connaît votre mot de passe.",
         "Theme": "Thème",
         "API Key": "Clé d’API",
-        "Names only allow letters, numbers and certain special characters": "Les noms d'utilisateurs ne doivent contenir que des lettres, des chiffres, et certains caractères spéciaux",
+        "Names only allow letters, numbers and certain special characters": "Les noms d'utilisateurs ne doivent contenir que des lettres, des chiffres et certains caractères spéciaux",
         "Language": "Langue"
     },
     "AccountWidget": {
@@ -74,8 +75,8 @@
         "Accounts": "Comptes",
         "Add Account": "Ajouter un compte",
         "Sign Out": "Se déconnecter",
-        "Upgrade Plan": "Version Premium",
-        "Support Grist": "Centre d'aide",
+        "Upgrade Plan": "Changer d'offre",
+        "Support Grist": "Soutenir Grist",
         "Billing Account": "Facturation",
         "Activation": "Activer",
         "Sign In": "Se connecter",
@@ -86,7 +87,8 @@
         "Action Log failed to load": "Impossible de charger le journal des actions",
         "Table {{tableId}} was subsequently removed in action #{{actionNum}}": "La table {{tableId}} a été ensuite supprimée dans l'action #{{actionNum}}",
         "This row was subsequently removed in action {{action.actionNum}}": "Cette ligne a été ensuite supprimée dans l'action {{action.actionNum}}",
-        "Column {{colId}} was subsequently removed in action #{{action.actionNum}}": "La colonne {{colId}} a ensuite été supprimée dans l'action #{{action.actionNum}}"
+        "Column {{colId}} was subsequently removed in action #{{action.actionNum}}": "La colonne {{colId}} a ensuite été supprimée dans l'action #{{action.actionNum}}",
+        "All tables": "Toutes les tables"
     },
     "AddNewButton": {
         "Add New": "Nouveau"
@@ -112,7 +114,9 @@
         "Legacy": "Ancienne version",
         "Personal Site": "Espace personnel",
         "Team Site": "Espace d'équipe",
-        "Grist Templates": "Modèles Grist"
+        "Grist Templates": "Modèles Grist",
+        "Billing Account": "Compte de facturation",
+        "Manage Team": "Gestion de l'équipe"
     },
     "AppModel": {
         "This team site is suspended. Documents can be read, but not modified.": "Le site de cette équipe est suspendu. Les documents peuvent être lus, mais pas modifiés."
@@ -140,7 +144,8 @@
         "Copy": "Copier",
         "Comment": "Commenter",
         "Cut": "Couper",
-        "Paste": "Coller"
+        "Paste": "Coller",
+        "Copy with headers": "Copier avec les entêtes"
     },
     "ChartView": {
         "Each Y series is followed by a series for the length of error bars.": "Chaque série Y est suivi par une série correspondant à la longueur des barres d'erreur.",
@@ -194,7 +199,17 @@
         "Widget needs to {{read}} the current table.": "Le widget a besoin de {{read}} la table actuelle.",
         "Widget does not require any permissions.": "La vue ne nécessite aucune autorisation.",
         "{{wrongTypeCount}} non-{{columnType}} columns are not shown_one": "{{wrongTypeCount}} colonnes non-{{columnType}} masquées",
-        "{{wrongTypeCount}} non-{{columnType}} columns are not shown_other": "{{wrongTypeCount}} colonnes de type non-{{columnType}} masquées"
+        "{{wrongTypeCount}} non-{{columnType}} columns are not shown_other": "{{wrongTypeCount}} colonnes de type non-{{columnType}} masquées",
+        "No {{columnType}} columns in table.": "Pas de colonne de type {{columnType}} dans la table.",
+        "Clear selection": "Tout désélectionner",
+        "ACCESS LEVEL": "NIVEAU D'ACCÈS",
+        "Accept": "Accepter",
+        "Custom URL": "URL personnalisée",
+        "Developer:": "Développeur/se :",
+        "Missing description and author information.": "Informations sur la description et sur l'auteur/rice manquantes.",
+        "Last updated:": "Dernière mise à jour :",
+        "Reject": "Refuser",
+        "Widget": "Widget"
     },
     "DataTables": {
         "Raw Data Tables": "Données sources",
@@ -202,7 +217,13 @@
         "Table ID copied to clipboard": "Identifiant de table copié",
         "Duplicate Table": "Dupliquer la table",
         "You do not have edit access to this document": "Vous n’avez pas accès en écriture à ce document",
-        "Delete {{formattedTableName}} data, and remove it from all pages?": "Supprimer les données de {{formattedTableName}} et les supprimer de toutes les pages ?"
+        "Delete {{formattedTableName}} data, and remove it from all pages?": "Supprimer les données de {{formattedTableName}} et les supprimer de toutes les pages ?",
+        "Edit Record Card": "Modifier la vue fiche",
+        "Rename Table": "Renommer la table",
+        "{{action}} Record Card": "{{action}} la vue fiche",
+        "Record Card": "Vue fiche",
+        "Remove Table": "Supprimer la table",
+        "Record Card Disabled": "Vue fiche désactivée"
     },
     "DocHistory": {
         "Activity": "Activité",
@@ -211,7 +232,8 @@
         "Compare to Current": "Comparer au document en cours",
         "Compare to Previous": "Comparer au précédent",
         "Beta": "Bêta",
-        "Snapshots are unavailable.": "Les sauvegardes ne sont pas disponibles."
+        "Snapshots are unavailable.": "Les sauvegardes ne sont pas disponibles.",
+        "Only owners have access to snapshots for documents with access rules.": "Seuls les propriétaires ont accès aux instantanés des documents soumis à des règles d'accès."
     },
     "DocMenu": {
         "Other Sites": "Autres espaces",
@@ -252,7 +274,11 @@
         "You may delete a workspace forever once it has no documents in it.": "Vous pouvez supprimer définitivement un dossier une fois qu’il ne contient plus de documents.",
         "Current workspace": "Dossier courant",
         "Requires edit permissions": "Nécessite des droits d'édition",
-        "Move {{name}} to workspace": "Déplacer {{name}} vers le dossier"
+        "Move {{name}} to workspace": "Déplacer {{name}} vers le dossier",
+        "Any documents created in this site will appear here.": "Tout document créé dans cet espace apparaîtra ici.",
+        "Create my first document": "Créer mon premier document",
+        "You have read-only access to this site. Currently there are no documents.": "Vous avez accès en lecture seule à cet espace. Actuellement il n'y a aucun document.",
+        "personal site": "espace personnel"
     },
     "DocPageModel": {
         "Error accessing document": "Erreur lors de l'accès au document",
@@ -284,7 +310,51 @@
         "API": "API",
         "Ok": "OK",
         "Manage Webhooks": "Gérer les points d’ancrage Web",
-        "Webhooks": "Points d’ancrage Web"
+        "Webhooks": "Points d’ancrage Web",
+        "API Console": "Console de l'API",
+        "Reload": "Recharger",
+        "Python": "Python",
+        "API URL copied to clipboard": "URL de l'API copié",
+        "API console": "Console de l'API",
+        "API documentation.": "Documentation de l'API.",
+        "Coming soon": "Prochainement",
+        "Copy to clipboard": "Copier dans le presse-papier",
+        "Currency": "Devise",
+        "Data Engine": "Moteur de données",
+        "Default for DateTime columns": "Valeur par défaut pour les colonnes Date et Heure",
+        "Document ID": "ID du Document",
+        "For currency columns": "Pour les colonnes de devises",
+        "Hard reset of data engine": "Réinitialisation du moteur de données",
+        "Locale": "Langue",
+        "For number and date formats": "Pour les colonnes de nombre et date",
+        "Base doc URL: {{docApiUrl}}": "URL de base pour ce document : {{docApiUrl}}",
+        "Document ID to use whenever the REST API calls for {{docId}}. See {{apiURL}}": "ID du document à utiliser lorsque l'API REST fait appel à {{docId}}. Voir {{apiURL}}",
+        "Python version used": "Version de Python utilisée",
+        "Notify other services on doc changes": "Informer d'autres services des changements du documents",
+        "Manage webhooks": "Gérer les points d'ancrage Web",
+        "ID for API use": "ID pour l'utilisation de l'API",
+        "Find slow formulas": "Trouver les formules lentes",
+        "python2 (legacy)": "python2 (ancien)",
+        "Try API calls from the browser": "Essayer les appels API à partir du navigateur",
+        "Time Zone": "Fuseau horaire",
+        "python3 (recommended)": "python3 (recommandé)",
+        "Start timing": "Début du chrono",
+        "Time reload": "Durée du rechargement",
+        "Stop timing...": "Arrêter le chrono...",
+        "Cancel": "Annuler",
+        "Reload data engine": "Recharger le moteur de données",
+        "Reload data engine?": "Recharger le moteur de données ?",
+        "Force reload the document while timing formulas, and show the result.": "Forcer le rechargement du document pendant le chronométrage des formules et afficher le résultat.",
+        "Formula timer": "Chronomètre de formule",
+        "Timing is on": "Le chronomètre tourne",
+        "You can make changes to the document, then stop timing to see the results.": "Vous pouvez apporter des modifications au document, puis arrêter le chronométrage pour voir les résultats.",
+        "Formula times": "Minuteur de formule",
+        "Only available to document editors": "Seulement disponible aux éditeurs du document",
+        "Only available to document owners": "Seulement disponible aux propriétaires du document",
+        "Edit": "Modifier",
+        "Template": "Modèle",
+        "Tutorial": "Tutoriel",
+        "Confirm change": "Confirmer les modifications"
     },
     "DocumentUsage": {
         "Usage statistics are only available to users with full access to the document data.": "Les statistiques d'utilisation ne sont disponibles qu'aux utilisateurs ayant un accès complet aux données du document.",
@@ -332,14 +402,14 @@
         "Mixed Behavior": "Comportement mixte",
         "Clear and make into formula": "Effacer et transformer en formule",
         "Convert column to data": "Convertir la colonne en données",
-        "Convert to trigger formula": "Convertir en formule",
+        "Convert to trigger formula": "Convertir en formule d'initialisation",
         "Clear and reset": "Effacer et réinitialiser",
         "Enter formula": "Saisir la formule",
         "COLUMN BEHAVIOR": "NATURE DE COLONNE",
         "Set formula": "Définir la formule",
         "Set trigger formula": "Définir une formule d’initialisation",
         "Make into data column": "Transformer en colonne de données",
-        "TRIGGER FORMULA": "TRIGGER FORMULA",
+        "TRIGGER FORMULA": "FORMULE D'INITIALISATION",
         "DESCRIPTION": "DESCRIPTION"
     },
     "FieldMenus": {
@@ -393,7 +463,47 @@
         "Sorted (#{{count}})_one": "Trié (#{{count}})",
         "Sorted (#{{count}})_other": "Triés (#{{count}})",
         "Insert column to the right": "Insérer une colonne à droite",
-        "Insert column to the left": "Insérer une colonne à gauche"
+        "Insert column to the left": "Insérer une colonne à gauche",
+        "Detect Duplicates in...": "Détecter les duplicas dans...",
+        "UUID": "UUID",
+        "Shortcuts": "Raccourcis",
+        "Show hidden columns": "Montrer les colonnes cachées",
+        "Created At": "Créé(e) le",
+        "Authorship": "Paternité",
+        "Last Updated By": "Dernière mise à jour par",
+        "Hidden Columns": "Colonnes cachées",
+        "Lookups": "Champ rapporté",
+        "No reference columns.": "Pas de colonne de référence.",
+        "Apply on record changes": "Appliquer lors des modifications de l'enregistrement",
+        "Duplicate in {{- label}}": "Duplica dans {{-label}}",
+        "Created By": "Créé(e) par",
+        "Last Updated At": "Dernière mise à jour le",
+        "Apply to new records": "Appliquer aux nouvelles lignes",
+        "Search columns": "Chercher des colonnes",
+        "Timestamp": "Horodatage",
+        "no reference column": "pas de colonne de référence",
+        "Adding UUID column": "Ajout d'une colonne UUID",
+        "Adding duplicates column": "Ajouter des colonnes dupliquées",
+        "Add formula column": "Ajouter une colonne formule",
+        "Add column with type": "Ajouter une colonne de type",
+        "Created by": "Créé par",
+        "Created at": "Créé à",
+        "Add column": "Ajouter une colonne",
+        "Last updated by": "Dernière mise à jour par",
+        "Detect duplicates in...": "Détecter les duplicats dans...",
+        "Last updated at": "Dernière mise à jour",
+        "Text": "Texte",
+        "DateTime": "Date et Heure",
+        "Choice": "Choix unique",
+        "Choice List": "Choix multiple",
+        "Date": "Date",
+        "Any": "Non défini",
+        "Numeric": "Numérique",
+        "Integer": "Entier",
+        "Toggle": "Booléen",
+        "Reference": "Référence",
+        "Reference List": "Référence multiple",
+        "Attachment": "Pièce jointe"
     },
     "GristDoc": {
         "Import from file": "Importer depuis un fichier",
@@ -416,20 +526,25 @@
         "Get started by exploring templates, or creating your first Grist document.": "Commencez par explorer des modèles ou créez votre premier document Grist.",
         "Welcome to Grist!": "Bienvenue sur Grist !",
         "Help Center": "Centre d'aide",
-        "Invite Team Members": "Inviter un nouveau membre",
+        "Invite Team Members": "Inviter un nouveau membre à l'espace d'équipe",
         "Browse Templates": "Parcourir les modèles",
         "Create Empty Document": "Créer un document vide",
-        "Import Document": "Importer un Fichier",
+        "Import Document": "Importer un fichier",
         "Visit our {{link}} to learn more.": "Consulter le {{link}} pour en savoir plus.",
         "{{signUp}} to save your work. ": "{{signUp}} pour enregistrer votre travail. ",
         "Welcome to Grist, {{- name}}!": "Bienvenue sur Grist, {{- name}} !",
-        "Welcome to {{- orgName}}": "Bienvenue sur {{- orgName}}"
+        "Welcome to {{- orgName}}": "Bienvenue sur {{- orgName}}",
+        "Visit our {{link}} to learn more about Grist.": "Visitez notre {{link}} pour en savoir plus sur Grist.",
+        "Sign in": "Connexion",
+        "To use Grist, please either sign up or sign in.": "Pour utiliser Grist, connectez-vous ou créez-vous un compte.",
+        "Learn more in our {{helpCenterLink}}.": "Pour en savoir plus, consultez notre {{helpCenterLink}}.",
+        "Only show documents": "Afficher des documents seulement"
     },
     "HomeLeftPane": {
         "All Documents": "Tous les documents",
         "Examples & Templates": "Modèles",
         "Create Empty Document": "Créer un document vide",
-        "Import Document": "Importer un Fichier",
+        "Import Document": "Importer un fichier",
         "Create Workspace": "Créer un nouveau dossier",
         "Trash": "Corbeille",
         "Rename": "Renommer",
@@ -439,7 +554,9 @@
         "Workspace will be moved to Trash.": "Le dossier va être mis à la corbeille.",
         "Manage Users": "Gérer les utilisateurs",
         "Access Details": "Détails d'accès",
-        "Tutorial": "Tutoriel"
+        "Tutorial": "Tutoriel",
+        "Terms of service": "CGU",
+        "Grist Resources": "Ressources Grist"
     },
     "Importer": {
         "Update existing records": "Mettre à jour les enregistrements existants",
@@ -448,7 +565,18 @@
         "{{count}} unmatched field in import_one": "{{count}} champ non apparié dans l'importation",
         "{{count}} unmatched field in import_other": "{{count}} champs non appariés dans l'importation",
         "{{count}} unmatched field_one": "{{count}} champ non apparié",
-        "{{count}} unmatched field_other": "{{count}} champs non appariés"
+        "{{count}} unmatched field_other": "{{count}} champs non appariés",
+        "Column mapping": "Cartographie de colonne",
+        "Grist column": "Colonne Grist",
+        "Revert": "Annuler",
+        "Skip Import": "Ignorer l'import",
+        "New Table": "Nouvelle table",
+        "Skip": "Passer",
+        "Column Mapping": "Cartographie de Colonne",
+        "Destination table": "Table de destination",
+        "Skip Table on Import": "Ignorer la table à l'import",
+        "Import from file": "Importer un fichier",
+        "Source column": "Colonne source"
     },
     "LeftPanelCommon": {
         "Help Center": "Centre d'aide"
@@ -476,7 +604,12 @@
         "Organization": "Organisation",
         "You do not have write access to this site": "Vous n’avez pas d'accès en écriture à cet espace",
         "Workspace": "Dossier",
-        "You do not have write access to the selected workspace": "Vous n’avez pas accès en écriture à ce dossier"
+        "You do not have write access to the selected workspace": "Vous n’avez pas accès en écriture à ce dossier",
+        "Remove all data but keep the structure to use as a template": "Supprimer toutes les données mais garder la structure comme modèle",
+        "Remove document history (can significantly reduce file size)": "Supprimer l'historique du document (peut réduire sensiblement la taille du fichier)",
+        "Download full document and history": "Télécharger le document complet et l'historique",
+        "Download": "Télécharger",
+        "Download document": "Télécharger le document"
     },
     "NotifyUI": {
         "Upgrade Plan": "Améliorer votre abonnement",
@@ -492,7 +625,8 @@
     },
     "OnBoardingPopups": {
         "Finish": "Terminer",
-        "Next": "Suivant"
+        "Next": "Suivant",
+        "Previous": "Précédent"
     },
     "OpenVideoTour": {
         "YouTube video player": "Lecteur vidéo YouTube",
@@ -504,7 +638,7 @@
         "Select Widget": "Choisir la vue",
         "Select Data": "Choisir les données source",
         "Group by": "Grouper par",
-        "Add to Page": "Ajouter à la page"
+        "Add to Page": "Ajouter à la Page"
     },
     "Pages": {
         "The following tables will no longer be visible_one": "La donnée source ne sera plus visible",
@@ -561,10 +695,30 @@
         "Detach": "Détacher",
         "SELECT BY": "SÉLECTIONNER PAR",
         "Select Widget": "Choisir la vue",
-        "SELECTOR FOR": "SÉLECTEUR",
+        "SELECTOR FOR": "SÉLECTEUR POUR",
         "Save": "Enregistrer",
         "You do not have edit access to this document": "Vous n’avez pas accès en écriture à ce document",
-        "Add referenced columns": "Ajouter une colonne référencée"
+        "Add referenced columns": "Ajouter une colonne référencée",
+        "Redirect automatically after submission": "Redirection automatique après soumission",
+        "Redirection": "Redirection",
+        "Configuration": "Configuration",
+        "Default field value": "Valeur par défaut du champ",
+        "Display button": "Afficher le bouton",
+        "Enter text": "Saisir du texte",
+        "Field rules": "Règles du champ",
+        "Field title": "Titre du champ",
+        "Hidden field": "Champ caché",
+        "Layout": "Mise en page",
+        "Submission": "Soumission",
+        "Submit button label": "Libellé du bouton de validation",
+        "Success text": "Message de succès",
+        "Table column name": "Nom de la colonne",
+        "Enter redirect URL": "Saisir l'URL de redirection",
+        "Reset form": "Réinitialiser le formulaire",
+        "Submit another response": "Soumettre une autre réponse",
+        "Required field": "Champ obligatoire",
+        "No field selected": "Aucun champ sélectionné",
+        "Select a field in the form widget to configure.": "Sélectionnez un champ du formulaire à configurer."
     },
     "RowContextMenu": {
         "Insert row": "Insérer une ligne",
@@ -573,7 +727,9 @@
         "Duplicate rows_one": "Dupliquer la ligne",
         "Duplicate rows_other": "Dupliquer les lignes",
         "Delete": "Supprimer",
-        "Copy anchor link": "Copier l'ancre"
+        "Copy anchor link": "Copier l'ancre",
+        "View as card": "Voir en fiche",
+        "Use as table headers": "Utiliser en tant qu'entêtes de table"
     },
     "SelectionSummary": {
         "Copied to clipboard": "Copié dans le presse-papier"
@@ -598,7 +754,13 @@
         "Export CSV": "Exporter en CSV",
         "Export XLSX": "Exporter en XLSX",
         "Send to Google Drive": "Envoyer vers Google Drive",
-        "Share": "Partager"
+        "Share": "Partager",
+        "Download...": "Télécharger...",
+        "Microsoft Excel (.xlsx)": "Microsoft Excel (.xlsx)",
+        "Export as...": "Exporter en tant que...",
+        "Comma Separated Values (.csv)": "Valeurs séparées par des virgules (.csv)",
+        "DOO Separated Values (.dsv)": "DOO Separated Values (.dsv)",
+        "Tab Separated Values (.tsv)": "Valeurs séparées par des tabulations (.tsv)"
     },
     "SiteSwitcher": {
         "Switch Sites": "Changer d’espace",
@@ -610,11 +772,11 @@
         "Use choice position": "Utiliser l'ordre des choix",
         "Natural sort": "Trier",
         "Empty values last": "Valeurs vides en dernier",
-        "Search Columns": "Rechercher"
+        "Search Columns": "Rechercher dans les colonnes"
     },
     "SortFilterConfig": {
         "Save": "Enregistrer",
-        "Revert": "Restaurer",
+        "Revert": "Retour",
         "Sort": "TRI",
         "Filter": "FILTRE",
         "Update Sort & Filter settings": "Mettre à jour le tri et le filtre"
@@ -631,18 +793,20 @@
         "Code View": "Vue du code",
         "How-to Tutorial": "Tutoriel pratique",
         "Tour of this Document": "Découvrir le document",
-        "Delete document tour?": "Delete document tour?",
+        "Delete document tour?": "Supprimer la visite guidée du document ?",
         "Delete": "Supprimer",
         "Return to viewing as yourself": "Revenir à une vue en propre",
         "Raw Data": "Données source",
-        "Settings": "Paramètres"
+        "Settings": "Paramètres",
+        "API Console": "Console de l'API"
     },
     "TopBar": {
-        "Manage Team": "Gestion de l'équipe"
+        "Manage Team": "Gestion de l'équipe",
+        "Manage team": "Gérer les équipes"
     },
     "TriggerFormulas": {
         "Any field": "N'importe quel champ",
-        "Apply to new records": "Nouveaux enregistrements",
+        "Apply to new records": "Appliquer sur les nouvelles lignes uniquement",
         "Apply on changes to:": "Appliquer sur les modifications à :",
         "Apply on record changes": "Réappliquer en cas de modification de la ligne",
         "Current field ": "Champ actif ",
@@ -672,14 +836,14 @@
         "Update formula (Shift+Enter)": "Mettre à jour la formule (Maj+Entrée)"
     },
     "ViewConfigTab": {
-        "Unmark On-Demand": "Unmark On-Demand",
+        "Unmark On-Demand": "Ne plus marquer comme \"à la demande\"",
         "Make On-Demand": "Rendre dynamique",
         "Advanced settings": "Paramètres avancés",
-        "Big tables may be marked as \"on-demand\" to avoid loading them into the data engine.": "Big tables may be marked as \"on-demand\" to avoid loading them into the data engine.",
+        "Big tables may be marked as \"on-demand\" to avoid loading them into the data engine.": "Les grosses tables peuvent être marquées comme \"à la demande\" pour éviter de les charger dans le moteur de calcul.",
         "Form": "Formulaire",
         "Compact": "Compact",
         "Blocks": "Blocs",
-        "Edit Card Layout": "Disposition de la carte",
+        "Edit Card Layout": "Disposition de la fiche",
         "Plugin: ": "Plugin : ",
         "Section: ": "Section : "
     },
@@ -690,19 +854,20 @@
         "Print widget": "Imprimer la vue",
         "Download as CSV": "Télécharger en CSV",
         "Download as XLSX": "Télécharger en XLSX",
-        "Edit Card Layout": "Disposition de la carte",
+        "Edit Card Layout": "Disposition de la fiche",
         "Widget options": "Options de la vue",
         "Advanced Sort & Filter": "Tri et filtre avancés",
         "Data selection": "Sélection des données",
         "Open configuration": "Ouvrir la configuration",
         "Delete widget": "Supprimer la vue",
         "Collapse widget": "Réduire la vue",
-        "Add to page": "Ajouter à la page"
+        "Add to page": "Ajouter à la page",
+        "Create a form": "Créer un formulaire"
     },
     "ViewSectionMenu": {
         "Update Sort&Filter settings": "Mettre à jour le tri et le filtre",
         "Save": "Enregistrer",
-        "Revert": "Restaurer",
+        "Revert": "Retour",
         "(customized)": "(personnalisé)",
         "(modified)": "(modifié)",
         "(empty)": "(vide)",
@@ -773,7 +938,16 @@
         "Contact support": "Contacter le support",
         "Something went wrong": "Une erreur s’est produite",
         "There was an error: {{message}}": "Une erreur s’est produite : {{message}}",
-        "There was an unknown error.": "Une erreur inconnue s’est produite."
+        "There was an unknown error.": "Une erreur inconnue s’est produite.",
+        "Account deleted{{suffix}}": "Compte supprimé {{suffix}}",
+        "Your account has been deleted.": "Votre compte a été supprimé.",
+        "Sign up": "S'inscrire",
+        "Build your own form": "Créez votre propre formulaire",
+        "Form not found": "Formulaire non trouvé",
+        "Powered by": "Créé avec",
+        "An unknown error occurred.": "Une erreur inconnue s'est produite.",
+        "Sign-in failed{{suffix}}": "Échec de l'authentification{{suffix}}",
+        "Failed to log in.{{separator}}Please try again or contact support.": "Échec de la connexion.{{separator}}Merci de retenter ou contacter le support."
     },
     "menus": {
         "Select fields": "Sélectionner les champs",
@@ -790,12 +964,26 @@
         "Choice List": "Choix multiple",
         "Toggle": "Booléen",
         "Reference": "Référence",
-        "Any": "Non défini"
+        "Any": "Non défini",
+        "Search columns": "Chercher des colonnes",
+        "By Name": "Par Nom",
+        "By Date Modified": "Par Date de modification"
     },
     "modals": {
         "Save": "Enregistrer",
         "Cancel": "Annuler",
-        "Ok": "OK"
+        "Ok": "OK",
+        "Don't show tips": "Masquer les astuces",
+        "Undo to restore": "Annuler et rétablir",
+        "Don't show again": "Ne plus montrer",
+        "Delete": "Supprimer",
+        "Dismiss": "Ignorer",
+        "Don't ask again.": "Ne plus demander.",
+        "Don't show again.": "Ne plus montrer.",
+        "Got it": "J'ai compris",
+        "Are you sure you want to delete these records?": "Êtes-vous sûr de vouloir supprimer ces enregistrements ?",
+        "Are you sure you want to delete this record?": "Êtes-vous sûr de vouloir supprimer cet enregistrement ?",
+        "TIP": "CONSEIL"
     },
     "pages": {
         "Rename": "Renommer",
@@ -815,7 +1003,11 @@
     },
     "NTextBox": {
         "false": "faux",
-        "true": "vrai"
+        "true": "vrai",
+        "Single line": "Ligne unique",
+        "Multi line": "Multi-lignes",
+        "Lines": "Lignes",
+        "Field Format": "Format du champ"
     },
     "ViewAsDropdown": {
         "View As": "Voir en tant que",
@@ -823,16 +1015,19 @@
         "Users from table": "Utilisateurs de la table"
     },
     "ViewAsBanner": {
-        "UnknownUser": "Utilisateur inconnu"
+        "UnknownUser": "Utilisateur inconnu",
+        "View as Yourself": "Voir en tant que vous-même",
+        "You are viewing this document as": "Vous voyez ce document en tant que"
     },
     "CellStyle": {
         "Open row styles": "Ouvrir les styles de ligne",
         "Cell Style": "Style de cellule",
         "CELL STYLE": "STYLE de CELLULE",
-        "Default cell style": "Style par défaut",
+        "Default cell style": "Style par défaut de la cellule",
         "Mixed style": "Style composite",
         "Header Style": "Style de l'entête",
-        "Default header style": "Style par défaut"
+        "Default header style": "Style par défaut",
+        "HEADER STYLE": "STYLE DE l'EN-TÊTE"
     },
     "DiscussionEditor": {
         "Comment": "Commentaire",
@@ -861,7 +1056,8 @@
         "Mixed format": "Format composite",
         "Revert field settings for {{colId}} to common": "Réinitialiser les paramètres par défaut pour {{colId}}",
         "Save field settings for {{colId}} as common": "Sauvegarder les paramètres pour {{colId}}",
-        "Use separate field settings for {{colId}}": "Utiliser des paramètres spécifiques pour {{colId}}"
+        "Use separate field settings for {{colId}}": "Utiliser des paramètres spécifiques pour {{colId}}",
+        "Changing column type": "Changement du type de colonne"
     },
     "WelcomeTour": {
         "Customizing columns": "Personnaliser les colonnes",
@@ -884,7 +1080,7 @@
         "Make it relational! Use the {{ref}} type to link tables. ": "Rendez-le relationnel ! Utilisez le type {{ref}} pour lier les tableaux. ",
         "Toggle the {{creatorPanel}} to format columns, ": "Ouvrez le {{creatorPanel}} pour formater les colonnes ",
         "Use {{addNew}} to add widgets, pages, or import more data. ": "Cliquez sur {{addNew}} pour ajouter des vues, des pages ou importer plus de données. ",
-        "convert to card view, select data, and more.": "convertir en vue carte, sélectionner des données et plus.",
+        "convert to card view, select data, and more.": "convertir en vue fiche, sélectionner des données et plus.",
         "Set formatting options, formulas, or column types, such as dates, choices, or attachments. ": "Définissez des options de formatage de la colonne, des formules ou bien les types de la colonne (dates, liste à choix unique, pièce jointe etc.) ",
         "Use {{helpCenter}} for documentation or questions.": "Cliquez sur {{helpCenter}} pour voir la documentation et poser vos questions.",
         "creator panel": "menu latéral"
@@ -897,7 +1093,7 @@
         "Update formula (Shift+Enter)": "Modifier la formule (MAJ+Entrée)"
     },
     "ColumnEditor": {
-        "COLUMN DESCRIPTION": "DESCRIPTION",
+        "COLUMN DESCRIPTION": "DESCRIPTION DE LA COLONNE",
         "COLUMN LABEL": "LIBELLÉ"
     },
     "ACLUsers": {
@@ -910,7 +1106,9 @@
         "Add another rule": "Ajouter une autre règle",
         "Error in style rule": "Erreur dans la règle de style",
         "Row Style": "Style de ligne",
-        "Rule must return True or False": "La règle doit retourner Vrai ou Faux"
+        "Rule must return True or False": "La règle doit retourner Vrai ou Faux",
+        "Conditional Style": "Style conditionnel",
+        "IF...": "SI..."
     },
     "CurrencyPicker": {
         "Invalid currency": "Devise invalide"
@@ -919,7 +1117,7 @@
         "CHOICES": "CHOIX"
     },
     "ColumnInfo": {
-        "COLUMN DESCRIPTION": "DESCRIPTION",
+        "COLUMN DESCRIPTION": "DESCRIPTION DE LA COLONNE",
         "COLUMN ID: ": "Identifiant de la colonne : ",
         "COLUMN LABEL": "LIBELLÉ",
         "Cancel": "Annuler",
@@ -933,7 +1131,7 @@
         "It should be impossible to save a plain data value into a formula column": "Il devrait être impossible d'enregistrer une valeur de donnée brute dans une colonne de formule"
     },
     "FormulaEditor": {
-        "Errors in all {{numErrors}} cells": "Erreur dans toutes les {{numErrors}} cellules",
+        "Errors in all {{numErrors}} cells": "Erreur dans les {{numErrors}} cellules",
         "Error in the cell": "Erreur dans la cellule",
         "Column or field is required": "Colonne ou champ requis",
         "Errors in {{numErrors}} of {{numCells}} cells": "Erreur dans {{numErrors}} des {{numCells}} cellules",
@@ -947,7 +1145,12 @@
         "Decimals": "Décimales",
         "Currency": "Devise",
         "Default currency ({{defaultCurrency}})": "Devise par défaut ({{defaultCurrency}})",
-        "Number Format": "Format de nombre"
+        "Number Format": "Format de nombre",
+        "min": "min",
+        "Text": "Texte",
+        "max": "max",
+        "Field Format": "Format du champ",
+        "Spinner": "Roue"
     },
     "LanguageMenu": {
         "Language": "Langue"
@@ -974,12 +1177,12 @@
         "Only those rows will appear which match all of the filters.": "Seules les lignes qui correspondent à tous les filtres apparaîtront.",
         "Select the table to link to.": "Sélectionnez la table vers laquelle vous souhaitez établir un lien.",
         "Selecting Data": "Sélection de données",
-        "Rearrange the fields in your card by dragging and resizing cells.": "Réorganisez les champs de votre vue carte en faisant glisser et en redimensionnant les cellules.",
+        "Rearrange the fields in your card by dragging and resizing cells.": "Réorganisez les champs de votre vue fiche en faisant glisser et en redimensionnant les cellules.",
         "The Raw Data page lists all data tables in your document, including summary tables and tables not included in page layouts.": "La page des données sources liste toutes les tables de votre document, y compris les tables récapitulatives et les tables non-inclues dans les mises en page.",
         "The total size of all data in this document, excluding attachments.": "La taille totale de toutes les données de ce document, à l'exclusion des pièces jointes.",
         "Click the Add New button to create new documents or workspaces, or import data.": "Cliquez sur le bouton Nouveau pour créer de nouveaux documents dans votre espace de travail ou importer des données.",
         "Clicking {{EyeHideIcon}} in each cell hides the field from this view without deleting it.": "En cliquant sur {{EyeHideIcon}} dans chaque cellule, vous masquez le champ de cette vue sans le supprimer.",
-        "Editing Card Layout": "Modification de la mise en page de la carte",
+        "Editing Card Layout": "Modification de la mise en page de la fiche",
         "Linking Widgets": "Lier les vues",
         "Nested Filtering": "Filtrage imbriqué",
         "Pinned filters are displayed as buttons above the widget.": "Les filtres épinglés sont affichés sous forme de boutons au-dessus de la vue.",
@@ -994,7 +1197,7 @@
         "relational": "relationnelles",
         "Access Rules": "Règles d'accès",
         "Learn more.": "En savoir plus.",
-        "They allow for one record to point (or refer) to another.": "Ils permettent à un enregistrement de pointer (ou de faire référence) vers un autre.",
+        "They allow for one record to point (or refer) to another.": "Ils permettent à une ligne de pointer (ou de faire référence) vers une autre.",
         "Add New": "Nouveau",
         "Access rules give you the power to create nuanced rules to determine who can see or edit which parts of your document.": "Les règles d'accès vous donnent le pouvoir de créer des règles nuancées pour déterminer qui peut voir ou modifier quelles parties de votre document.",
         "Use the 𝚺 icon to create summary (or pivot) tables, for totals or subtotals.": "Utilisez l'icône 𝚺 pour créer des tables récapitulatives (ou tables croisées dynamiques), pour les totaux ou les sous-totaux.",
@@ -1002,16 +1205,40 @@
         "Anchor Links": "Ancres",
         "Custom Widgets": "Vues personnalisées",
         "To make an anchor link that takes the user to a specific cell, click on a row and press {{shortcut}}.": "Pour créer un lien d'ancrage qui amène l'utilisateur à une cellule spécifique, cliquez sur une ligne et appuyez sur {{shortcut}}.",
-        "You can choose one of our pre-made widgets or embed your own by providing its full URL.": "Vous pouvez choisir l'une de nos vues prédéfinis ou intégrer la vôtre en indiquant son URL complète."
+        "You can choose one of our pre-made widgets or embed your own by providing its full URL.": "Vous pouvez choisir l'une de nos vues prédéfinies ou intégrer la vôtre en indiquant son URL complète.",
+        "To configure your calendar, select columns for start": {
+            "end dates and event titles. Note each column's type.": "Pour configurer votre calendrier, sélectionnez les colonnes pour les dates de début/fin et le nom de l'évènement. Notez le type de chaque colonne."
+        },
+        "Calendar": "Calendrier",
+        "Can't find the right columns? Click 'Change Widget' to select the table with events data.": "Impossible de trouver les bonnes colonnes ? Cliquez sur \"Changer de vue\" pour sélectionner la table contenant les évènements.",
+        "A UUID is a randomly-generated string that is useful for unique identifiers and link keys.": "Un UUID est un texte généré aléatoirement qui est utile pour les identifiants uniques et les clés de jointures.",
+        "Formulas support many Excel functions, full Python syntax, and include a helpful AI Assistant.": "Les formules supportent beaucoup de fonctions Excel et la syntaxe Python complète. Un assistant IA est disponible sur certaines instances.",
+        "Lookups return data from related tables.": "Récupère les données d'une table liée.",
+        "You can choose from widgets available to you in the dropdown, or embed your own by providing its full URL.": "Vous pouvez choisir parmi les widgets disponibles dans le menu déroulant, ou utilisez le votre en fournissant son URL complète.",
+        "Use reference columns to relate data in different tables.": "Utilisez les colonnes de type Référence pour lier différentes tables entre elles.",
+        "Learn more": "En savoir plus",
+        "Build simple forms right in Grist and share in a click with our new widget. {{learnMoreButton}}": "Créez des formulaires simples directement dans Grist et partagez-les en un clic avec notre nouveau widget. {{learnMoreButton}}",
+        "Forms are here!": "Les formulaires sont là !",
+        "These rules are applied after all column rules have been processed, if applicable.": "Ces règles sont appliquées après le traitement de toutes les règles de la colonne, le cas échéant.",
+        "Example: {{example}}": "Exemple : {{example}}",
+        "Filter displayed dropdown values with a condition.": "Filtrer les valeurs affichées dans la liste déroulante en fonction d'une condition.",
+        "Community widgets are created and maintained by Grist community members.": "Les widgets communautaires sont créés et maintenus par des membres de la communauté de Grist.",
+        "Creates a reverse column in target table that can be edited from either end.": "Crée une colonne inversée dans la table cible qui peut être modifiée des deux côtés.",
+        "This limitation occurs when one column in a two-way reference has the Reference type.": "Cette limitation se produit lorsque l'une des colonnes d'une référence bidirectionnelle est de type Référence.",
+        "To allow multiple assignments, change the referenced column's type to Reference List.": "Pour permettre plusieurs assignations, modifiez le type de la colonne référencée en Référence Multiple.",
+        "To allow multiple assignments, change the type of the Reference column to Reference List.": "Pour permettre des assignations multiples, modifiez le type de la colonne Référence en Référence Multiple.",
+        "This limitation occurs when one end of a two-way reference is configured as a single Reference.": "Cette limitation se produit lorsque l'une des extrémités d'une référence bidirectionnelle est configurée comme une référence unique.",
+        "Two-way references are not currently supported for Formula or Trigger Formula columns": "Les références bidirectionnelles ne peuvent pas contenir des formules ou des formules d'initialisation",
+        "The preview below this header shows how the selected user will see this document": "L'aperçu sous cette entête montre ce que l'utilisateur sélectionné peut voir"
     },
     "ColumnTitle": {
         "Add description": "Ajouter une description",
         "Cancel": "Annuler",
-        "Column ID copied to clipboard": "Identifiant de la column copié",
-        "COLUMN ID: ": "Identifiant de la column : ",
+        "Column ID copied to clipboard": "Identifiant de la colonne copié",
+        "COLUMN ID: ": "Identifiant de la colonne : ",
         "Column description": "Description de la colonne",
         "Column label": "Libellé de la colonne",
-        "Provide a column label": "Renommer la colonne",
+        "Provide a column label": "Donner un nom à la colonne",
         "Save": "Sauvegarder",
         "Close": "Fermer"
     },
@@ -1036,7 +1263,22 @@
     },
     "WebhookPage": {
         "Clear Queue": "Effacer la file d'attente",
-        "Webhook Settings": "Paramètres des points d’ancrage Web"
+        "Webhook Settings": "Paramètres des points d’ancrage Web",
+        "Cleared webhook queue.": "Effacement de la file d'attente du point d'ancrage Web.",
+        "Columns to check when update (separated by ;)": "Colonnes à vérifier lors de la mise à jour (séparées par des ;)",
+        "Event Types": "Types d'événements",
+        "Memo": "Mémo",
+        "Ready Column": "Colonne de déclenchement",
+        "Removed webhook.": "Point d'ancrage supprimé.",
+        "Filter for changes in these columns (semicolon-separated ids)": "Filtrer les changements dans ces colonnes (identifiants séparés par des points-virgules)",
+        "Status": "Statut",
+        "URL": "URL",
+        "Webhook Id": "Id du point d'ancrage Web",
+        "Table": "Table",
+        "Enabled": "Activé",
+        "Name": "Nom",
+        "Sorry, not all fields can be edited.": "Désolé, tous les champs ne peuvent pas être modifiés.",
+        "Header Authorization": "Entête de sécurité"
     },
     "FormulaAssistant": {
         "Grist's AI Formula Assistance. ": "Assistance des formules de l'IA de Grist ",
@@ -1055,8 +1297,8 @@
         "AI Assistant": "Assistant IA",
         "Apply": "Appliquer",
         "Cancel": "Annuler",
-        "Hi, I'm the Grist Formula AI Assistant.": "Bonjour, je suis l'assistant IA de Grist pour les formules",
-        "I can only help with formulas. I cannot build tables, columns, and views, or write access rules.": "Je peux aider seulement pour les formules, je ne peut pas créer de tables, de colonnes, de vue ou gérer les droits d'accès.",
+        "Hi, I'm the Grist Formula AI Assistant.": "Bonjour, je suis l'assistant IA de Grist pour les formules.",
+        "I can only help with formulas. I cannot build tables, columns, and views, or write access rules.": "Je ne peux aider que pour les formules, je ne peut pas créer de tables, de colonnes, de vue ou gérer les droits d'accès.",
         "Learn more": "En apprendre plus",
         "Clear Conversation": "Effacer la conversation",
         "Code View": "Vue du code",
@@ -1067,14 +1309,25 @@
         "Capabilities": "Capacités",
         "Community": "Communauté",
         "Formula Help. ": "Aide pour les formules. ",
-        "What do you need help with?": "Quel est votre besoin d'aide ?"
+        "What do you need help with?": "Quel est votre besoin d'aide ?",
+        "For higher limits, contact the site owner.": "Pour un plafond supérieur, contactez le propriétaire du site.",
+        "Formula AI Assistant is only available for logged in users.": "L'Assistant de Formule IA n'est disponible que pour les utilisateurs connectés.",
+        "upgrade to the Pro Team plan": "passer au plan Pro Team",
+        "You have used all available credits.": "Vous avez utiliser tout vos crédits disponibles.",
+        "upgrade your plan": "mettez à niveau",
+        "You have {{numCredits}} remaining credits.": "Vous avez {{numCredits}} crédits restants.",
+        "For higher limits, {{upgradeNudge}}.": "Pour augmenter le plafond, {{upgradeNudge}}."
     },
     "SupportGristNudge": {
         "Help Center": "Centre d'aide",
         "Close": "Fermer",
         "Contribute": "Contribuer",
         "Support Grist": "Support Grist",
-        "Opt in to Telemetry": "S'inscrire à Telemetry"
+        "Opt in to Telemetry": "S'inscrire à l'envoi de données de télémétrie",
+        "Opted In": "Accepté",
+        "Support Grist page": "Soutenir Grist",
+        "Admin Panel": "Panneau d'administration",
+        "Thank you! Your trust and support is greatly appreciated. Opt out any time from the {{link}} in the user menu.": "Nous vous remercions ! Votre confiance et votre soutien sont très appréciés. Vous pouvez vous désinscrire à tout moment en cliquant sur le {{link}} dans le menu utilisateur."
     },
     "GridView": {
         "Click to insert": "Cliquer pour insérer"
@@ -1083,15 +1336,20 @@
         "GitHub": "GitHub",
         "Help Center": "Centre d'aide",
         "Home": "Accueil",
-        "Sponsor Grist Labs on GitHub": "Sponsoriser Grist Labs sur GitHub",
-        "GitHub Sponsors page": "Page de sponsors GitHub",
+        "Sponsor Grist Labs on GitHub": "Parrainer Grist Labs sur GitHub",
+        "GitHub Sponsors page": "Page de parrainage GitHub",
         "Manage Sponsorship": "Gérer le parrainage",
-        "Opt in to Telemetry": "S'inscrire à Telemetry",
-        "Opt out of Telemetry": "S'inscrire à Telemetry",
+        "Opt in to Telemetry": "S'inscrire à l'envoi de données de télémétrie",
+        "Opt out of Telemetry": "Se désinscrire de l'envoi de données de télémétrie",
         "Support Grist": "Support Grist",
-        "Telemetry": "Telemetry",
-        "This instance is opted in to telemetry. Only the site administrator has permission to change this.": "Cette instance est autorisée à utiliser la télémétrie. Seul l'administrateur de l'espace est autorisé à modifier ce paramètre.",
-        "This instance is opted out of telemetry. Only the site administrator has permission to change this.": "Cette instance est autorisée à utiliser la télémétrie. Seul l'administrateur de l'espace est autorisé à modifier ce paramètre."
+        "Telemetry": "Télémétrie",
+        "This instance is opted in to telemetry. Only the site administrator has permission to change this.": "Cette instance accepte l'envoi de données de télémétrie. Seul l'administrateur de l'espace est autorisé à modifier ce paramètre.",
+        "This instance is opted out of telemetry. Only the site administrator has permission to change this.": "Cette instance est autorisée à utiliser la télémétrie. Seul l'administrateur de l'espace est autorisé à modifier ce paramètre.",
+        "You have opted out of telemetry.": "Vous avez choisi de ne pas envoyer de données de télémétrie.",
+        "We only collect usage statistics, as detailed in our {{link}}, never document contents.": "Nous ne collectons que des statistiques d'usage, comme détaillé dans notre {{link}}, jamais le contenu des documents.",
+        "You can opt out of telemetry at any time from this page.": "Vous pouvez vous désinscrire de la télémétrie à tout moment depuis cette page.",
+        "You have opted in to telemetry. Thank you!": "Merci de vous être inscrit à la télémétrie !",
+        "Sponsor": "Parrainage"
     },
     "buildViewSectionDom": {
         "No data": "Aucune donnée",
@@ -1103,7 +1361,7 @@
         "Anyone with link ": "Toute personne possédant le lien ",
         "Cancel": "Annuler",
         "Close": "Fermer",
-        "Add {{member}} to your team": "Ajouter des {{member}}  à votre équipe",
+        "Add {{member}} to your team": "Ajouter {{member}} à votre équipe",
         "Confirm": "Confirmer",
         "member": "membre",
         "{{collaborator}} limit exceeded": "la limite de {{collaborator}} a été atteinte",
@@ -1113,38 +1371,40 @@
         "Collaborator": "Collaborateur",
         "Copy Link": "Copier le lien",
         "Create a team to share with more people": "Créer une équipe pour partager avec plus de personnes",
-        "Grist support": "Support Grist",
+        "Grist support": "Support utilisateur Grist",
         "Guest": "Invité",
         "Invite multiple": "Invitation multiple",
         "Invite people to {{resourceType}}": "Inviter des personnes à {{resourceType}}",
         "Link copied to clipboard": "Lien copié dans le presse-papiers",
         "Manage members of team site": "Gérer les membres de l'espace d'équipe",
-        "No default access allows access to be         granted to individual documents or workspaces, rather than the full team site.": "L'absence d'accès par défaut permet d'accorder l'accès à des documents ou à des espaces de travail spécifiques, plutôt qu'à l'ensemble de l'espace d'équipe.",
-        "Off": "Off",
-        "On": "On",
-        "Once you have removed your own access,             you will not be able to get it back without assistance              from someone else with sufficient access to the {{name}}.": "Une fois que vous avez supprimé votre propre accès, vous ne pourrez pas le récupérer sans l'aide d'une autre personne disposant d'un accès suffisant au {{name}}.",
+        "No default access allows access to be         granted to individual documents or workspaces, rather than the full team site.": "L'absence d'accès par défaut permet d' accorder l'accès à des documents ou à des espaces de travail spécifiques, plutôt qu'à l'ensemble de l'espace d'équipe.",
+        "Off": "Désactivé",
+        "On": "Activé",
+        "Once you have removed your own access,             you will not be able to get it back without assistance              from someone else with sufficient access to the {{name}}.": "Une fois que vous avez supprimé votre propre accès, vous ne pourrez pas le récupérer sans l'aide d'une autre personne disposant d'un accès suffisant à {{name}}.",
         "Open Access Rules": "Ouvrir les règles d'accès",
         "Outside collaborator": "Collaborateur externe",
         "Public Access": "Accès public",
         "Public access": "Accès public",
-        "Public access inherited from {{parent}}. To remove, set 'Inherit access' option to 'None'.": "L'accès public hérite de {{parent}}. Pour le supprimer, changer l'option 'Accès hérité' à 'Aucun'",
+        "Public access inherited from {{parent}}. To remove, set 'Inherit access' option to 'None'.": "L'accès public est hérité de {{parent}}. Pour le supprimer, changer l'option 'Accès hérité' à 'Aucun'.",
         "Public access: ": "Accès public : ",
         "Remove my access": "Supprimer mon accès",
         "Save & ": "Sauvegarder & ",
-        "Team member": "Membres",
-        "User may not modify their own access.": "L'utilisateur ne peut pas modifier son propre accès.",
+        "Team member": "Membres de l'espace d'équipe",
+        "User may not modify their own access.": "L'utilisateur ne peut pas modifier ses propres accès.",
         "Your role for this team site": "Votre rôle pour cet espace d'équipe",
         "Your role for this {{resourceType}}": "Votre rôle pour cet {{resourceType}}",
-        "free collaborator": "Collaborateur gratuit",
+        "free collaborator": "collaborateur gratuit",
         "guest": "invité",
         "No default access allows access to be granted to individual documents or workspaces, rather than the full team site.": "L'absence d'accès par défaut permet d'accorder l'accès à des documents ou à des espaces de travail spécifiques, plutôt qu'à l'ensemble de l'espace d'équipe.",
-        "Once you have removed your own access, you will not be able to get it back without assistance from someone else with sufficient access to the {{resourceType}}.": "Une fois que vous avez supprimé votre propre accès, vous ne pourrez pas le récupérer sans l'aide d'une autre personne disposant d'un accès suffisant au {{resourceType}}.",
-        "User has view access to {{resource}} resulting from manually-set access to resources inside. If removed here, this user will lose access to resources inside.": "L'utilisateur a un accès visuel à {{resource}} résultant d'un accès manuel aux ressources internes. S'il est supprimé ici, cet utilisateur perdra l'accès aux ressources internes.",
-        "You are about to remove your own access to this {{resourceType}}": "Vous êtes sur le point de supprimer votre propre accès à {{resourceType}}"
+        "Once you have removed your own access, you will not be able to get it back without assistance from someone else with sufficient access to the {{resourceType}}.": "Une fois que vous avez supprimé vos propres accès, vous ne pourrez pas les récupérer sans l'aide d'une autre personne disposant d'un accès suffisant au {{resourceType}}.",
+        "User has view access to {{resource}} resulting from manually-set access to resources inside. If removed here, this user will lose access to resources inside.": "L'utilisateur a un accès en lecture seule à {{resource}} résultant d'un accès des ressources à l'intérieur. S'il est supprimé ici, cet utilisateur perdra l'accès aux ressources à l'intérieur.",
+        "You are about to remove your own access to this {{resourceType}}": "Vous êtes sur le point de supprimer votre propre accès à {{resourceType}}",
+        "User inherits permissions from {{parent})}. To remove,           set 'Inherit access' option to 'None'.": "L'utilisateur hérite ses permissions de {{parent})}. Pour supprimer cela,            paramétrez 'Héritage d'accès à 'Aucun'.",
+        "Inherit access: ": "Hériter des droits d'accès : "
     },
     "SearchModel": {
         "Search all tables": "Rechercher toutes les tables",
-        "Search all pages": "Rechercher toutes les pages"
+        "Search all pages": "Rechercher dans toutes les pages"
     },
     "searchDropdown": {
         "Search": "Chercher"
@@ -1163,5 +1423,449 @@
         "Welcome back": "Bon retour parmi nous",
         "You can always switch sites using the account menu.": "Vous pouvez toujours changer d'espace en utilisant le menu du compte.",
         "You have access to the following Grist sites.": "Vous avez accès aux espaces Grist suivants."
+    },
+    "CardContextMenu": {
+        "Insert card above": "Insérer une fiche au dessus",
+        "Duplicate card": "Dupliquer la fiche",
+        "Insert card below": "Insérer une fiche en dessous",
+        "Delete card": "Supprimer la fiche",
+        "Copy anchor link": "Copier le lien d'ancrage",
+        "Insert card": "Insérer une fiche"
+    },
+    "WelcomeCoachingCall": {
+        "Maybe Later": "Peut-être plus tard",
+        "free coaching call": "appel d'assistance gratuit",
+        "Schedule Call": "Planifier l'appel",
+        "On the call, we'll take the time to understand your needs and tailor the call to you. We can show you the Grist basics, or start working with your data right away to build the dashboards you need.": "Lors de l'appel, nous prendrons le temps de comprendre vos besoins et d'adapter l'appel à ces derniers. Nous pouvons vous montrer les bases de Grist, ou commencer tout de suite à travailler avec vos données pour construire les tableaux de bord dont vous avez besoin.",
+        "Schedule your {{freeCoachingCall}} with a member of our team.": "Planifiez votre {{freeCoachingCall}} avec un membre de notre équipe."
+    },
+    "FormView": {
+        "Publish": "Publier",
+        "Publish your form?": "Publier votre formulaire ?",
+        "Unpublish": "Dépublier",
+        "Unpublish your form?": "Dépublier votre formulaire ?",
+        "Are you sure you want to reset your form?": "Êtes-vous sûr de vouloir réinitialiser votre formulaire ?",
+        "Anyone with the link below can see the empty form and submit a response.": "Toute personne ayant accès au lien ci-dessous peut voir le formulaire vide et soumettre une réponse.",
+        "Code copied to clipboard": "Code copié dans le presse-papiers",
+        "Copy code": "Copier le code",
+        "View": "Vue",
+        "Copy link": "Copier le lien",
+        "Embed this form": "Intégrer ce formulaire",
+        "Link copied to clipboard": "Lien copié dans le presse-papiers",
+        "Preview": "Aperçu",
+        "Reset form": "Réinitialiser le formulaire",
+        "Save your document to publish this form.": "Enregistrez votre document pour publier ce formulaire.",
+        "Share this form": "Partager ce formulaire",
+        "Reset": "Réinitialiser",
+        "Share": "Partager",
+        "Your form description goes here.": "Vous pouvez écrire une description ici.",
+        "## **Form Title**": "## **Titre du formulaire**"
+    },
+    "HiddenQuestionConfig": {
+        "Hidden fields": "Champs cachés"
+    },
+    "Menu": {
+        "Building blocks": "Blocs de construction",
+        "Columns": "Colonnes",
+        "Copy": "Copier",
+        "Cut": "Couper",
+        "Insert question above": "Insérer une question ci-dessus",
+        "Insert question below": "Insérer une question ci-dessous",
+        "Paragraph": "Paragraphe",
+        "Paste": "Coller",
+        "Separator": "Séparateur",
+        "Unmapped fields": "Champs non utilisés",
+        "Header": "Titre",
+        "New question": "Nouvelle question",
+        "More": "Plus"
+    },
+    "UnmappedFieldsConfig": {
+        "Mapped": "Utilisé",
+        "Select All": "Tout sélectionner",
+        "Unmap fields": "Champs non utilisés",
+        "Unmapped": "Non utilisé",
+        "Clear": "Effacer",
+        "Map fields": "Champs utilisés"
+    },
+    "FormConfig": {
+        "Field rules": "Règles du champ",
+        "Required field": "Champ obligatoire",
+        "Ascending": "Croissant",
+        "Default": "Par défaut",
+        "Descending": "Décroissant",
+        "Field Format": "Format du champ",
+        "Field Rules": "Règles du champ",
+        "Horizontal": "Horizontale",
+        "Options Alignment": "Option d'alignement",
+        "Options Sort Order": "Option d'ordonnancement",
+        "Vertical": "Verticale",
+        "Radio": "Radio",
+        "Select": "Sélectionner"
+    },
+    "Editor": {
+        "Delete": "Supprimer"
+    },
+    "CustomView": {
+        "Some required columns aren't mapped": "Certaines colonnes obligatoires ne sont pas utilisées",
+        "To use this widget, please map all non-optional columns from the creator panel on the right.": "Pour utiliser cette vue, utilisez toutes les colonnes obligatoires à partir du panneau du créateur sur la droite."
+    },
+    "FormContainer": {
+        "Build your own form": "Créez votre propre formulaire",
+        "Powered by": "Créé avec"
+    },
+    "FormErrorPage": {
+        "Error": "Erreur"
+    },
+    "FormModel": {
+        "Oops! The form you're looking for doesn't exist.": "Oups ! Le formulaire que vous recherchez n'existe pas.",
+        "Oops! This form is no longer published.": "Oups ! Ce formulaire n'est plus publié.",
+        "There was a problem loading the form.": "Il y a eu un problème de chargement du formulaire.",
+        "You don't have access to this form.": "Vous n'avez pas accès à ce formulaire."
+    },
+    "FormPage": {
+        "There was an error submitting your form. Please try again.": "Une erreur s'est produite lors de l'envoi de votre formulaire. Veuillez réessayer."
+    },
+    "FormSuccessPage": {
+        "Form Submitted": "Formulaire envoyé",
+        "Thank you! Your response has been recorded.": "Nous vous remercions. Votre réponse a été enregistrée.",
+        "Submit new response": "Soumettre une nouvelle réponse"
+    },
+    "DateRangeOptions": {
+        "Last 30 days": "30 derniers jours",
+        "Next 7 days": "7 prochains jours",
+        "Last 7 days": "7 derniers jours",
+        "Last Week": "Semaine passée",
+        "This month": "Ce mois-ci",
+        "This week": "Cette semaine",
+        "This year": "Cette année",
+        "Today": "Aujourd'hui"
+    },
+    "MappedFieldsConfig": {
+        "Mapped": "Utilisé",
+        "Select All": "Sélectionner tout",
+        "Unmap fields": "Champs non utilisés",
+        "Map fields": "Champs utilisés",
+        "Clear": "Effacer",
+        "Unmapped": "Non utilisé"
+    },
+    "Section": {
+        "Insert section above": "Ajouter une section ci-dessus",
+        "Insert section below": "Ajouter une section ci-dessous",
+        "### **Header**": "### **Titre**",
+        "Description": "Description"
+    },
+    "AdminPanel": {
+        "Current": "Actuelle",
+        "Current version of Grist": "Version actuelle de Grist",
+        "Help us make Grist better": "Aidez-nous à améliorer Grist",
+        "Home": "Accueil",
+        "Telemetry": "Télémétrie",
+        "Support Grist Labs on GitHub": "Soutenir Grist Labs sur GitHub",
+        "Admin Panel": "Panneau d'administration",
+        "Sponsor": "Parrainage",
+        "Support Grist": "Soutenir Grist",
+        "Version": "Version",
+        "Check now": "Vérifier",
+        "Checking for updates...": "Vérifier les mises à jour...",
+        "Error": "Erreur",
+        "Error checking for updates": "Erreur lors de la vérification des mises à jour",
+        "Grist is up to date": "Grist est à jour",
+        "Last checked {{time}}": "Dernière vérification {{time}}",
+        "Learn more.": "En savoir plus.",
+        "No information available": "Aucune information disponible",
+        "OK": "OK",
+        "Security Settings": "Paramètres de sécurité",
+        "Grist releases are at ": "Les releases de Grist sont disponibles sur ",
+        "Newer version available": "Nouvelle version disponible",
+        "Grist allows for very powerful formulas, using Python. We recommend setting the environment variable GRIST_SANDBOX_FLAVOR to gvisor if your hardware supports it (most will), to run formulas in each document within a sandbox isolated from other documents and isolated from the network.": "Grist permet d'utiliser des formules très puissantes, en utilisant Python. Nous recommandons de définir la variable d'environnement GRIST_SANDBOX_FLAVOR sur gvisor si votre machine le supporte (la plupart le supportent), afin d'exécuter des formules dans chaque document à l'intérieur d'une sandbox isolée des autres documents et du réseau.",
+        "Updates": "Mises à jour",
+        "unconfigured": "non configuré",
+        "unknown": "inconnu",
+        "Auto-check when this page loads": "Vérification automatique au chargement de cette page",
+        "Sandbox settings for data engine": "Paramètres de la Sandbox pour le moteur de données",
+        "Check failed.": "La vérification a échoué.",
+        "Check succeeded.": "Vérification réussie.",
+        "No fault detected.": "Aucun défaut n'a été détecté.",
+        "Notes": "Notes",
+        "Authentication": "Authentification",
+        "Administrator Panel Unavailable": "Panneau d'administration indisponible",
+        "Current authentication method": "Méthode actuelle d'authentification",
+        "Details": "Détails",
+        "Grist allows different types of authentication to be configured, including SAML and OIDC.     We recommend enabling one of these if Grist is accessible over the network or being made available     to multiple people.": "Grist permet de configurer différents types d'authentification, notamment SAML et OIDC. Nous recommandons d'activer l'un de ces types d'authentification si Grist est accessible via le réseau ou s'il est mis à la disposition de plusieurs personnes.",
+        "You do not have access to the administrator panel.\nPlease log in as an administrator.": "Vous n'avez pas accès au panneau d'administrateur.\nVeuillez vous connecter en tant qu'administrateur.",
+        "Results": "Résultats",
+        "Grist signs user session cookies with a secret key. Please set this key via the environment variable GRIST_SESSION_SECRET. Grist falls back to a hard-coded default when it is not set. We may remove this notice in the future since session IDs have been updated to be inherently cryptographically secure.": "Grist signe les cookies des sessions utilisateurs avec une clé secrète. Merci de renseigner cette clé via la variable d'environnement GRIST_SESSION_SECRET. Grist se replie sur une clé codée en dur par défaut si la variable n'est pas renseignée. La présente remarque sera peut-être retirée dans le futur comme les identifiants de session générés depuis la version 1.1.16 sont cryptographiquement sûrs.",
+        "Key to sign sessions with": "Clé de signature des sessions",
+        "Grist allows different types of authentication to be configured, including SAML and OIDC. We recommend enabling one of these if Grist is accessible over the network or being made available to multiple people.": "Grist autorise la configuration de différents types d'authentifications, parmi lesquels SAML et OIDC. Nous recommandons d'activer l'une d'entre elles si Grist est accessible sur le réseau ou est rendu accessible à plusieurs personnes.",
+        "Grist signs user session cookies with a secret key. Please set this key via the environment variable GRIST_SESSION_SECRET. Grist falls back to a hard-coded default when it is not set. We may remove this notice in the future as session IDs generated since v1.1.16 are inherently cryptographically secure.": "Grist signe les cookies des sessions utilisateurs avec une clé secrète. Merci de renseigner cette clé via la variable d'environnement GRIST_SESSION_SECRET. Grist utilise par défaut une clé codée en dur si la variable n'est pas renseignée. Nous retirerons peut-être cet avertissement à l'avenir comme les identifiants de session générés depuis la version 1.1.16 sont intrinsèquement cryptographiquement sûrs.",
+        "Sandboxing": "Bac à sable",
+        "Self Checks": "Auto contrôles",
+        "Session Secret": "Secret de session",
+        "Or, as a fallback, you can set: {{bootKey}} in the environment and visit: {{url}}": "Ou, comme plan B., vous pouvez renseigner : {{bootKey}} dans l'environnement et visiter : {{url}}",
+        "Enable Grist Enterprise": "Activer Grist Entreprise",
+        "Enterprise": "Entreprise",
+        "checking": "vérification",
+        "Off": "Désactivé",
+        "Contact us": "Nous contacter",
+        "New, Enterprise": "Nouveau, Entreprise",
+        "Log Streaming": "Flux de journalisation",
+        "Audit Logs": "Journaux d'audit",
+        "{{firstDestinationName}} + {{- remainingDestinationsCount}} more": "{{firstDestinationName}} + {{- remainingDestinationsCount}} supplémentaires"
+    },
+    "Field": {
+        "No choices configured": "Aucun choix configuré",
+        "No values in show column of referenced table": "Pas de valeurs dans la colonne montrée de la table de référence",
+        "Hide": "Cacher"
+    },
+    "CreateTeamModal": {
+        "Cancel": "Annuler",
+        "Choose a name and url for your team site": "Choisissez un nom et une adresse URL pour votre espace d'équipe",
+        "Create site": "Créer un site",
+        "Domain name is invalid": "Le nom de domaine n'est pas valide",
+        "Domain name is required": "Le nom de domaine est requis",
+        "Go to your site": "Aller vers votre espace d'équipe",
+        "Team name": "Nom de l'espace d'équipe",
+        "Team site created": "L'espace d'équipe a été créé",
+        "Team url": "Url de l'espace d'équipe",
+        "Work as a Team": "Travailler en équipe",
+        "Billing is not supported in grist-core": "La facturation n'est pas prise en charge dans un Grist auto hébergé",
+        "Team name is required": "Le nom de l'espace d'équipe est requis"
+    },
+    "Toggle": {
+        "Field Format": "Format du champ",
+        "Checkbox": "Case à cocher",
+        "Switch": "Changer"
+    },
+    "Columns": {
+        "Remove Column": "Supprimer la colonne"
+    },
+    "ChoiceEditor": {
+        "Error in dropdown condition": "Erreur dans la condition de la liste déroulante",
+        "No choices to select": "Aucun choix à sélectionner",
+        "No choices matching condition": "Aucun choix correspondant à la condition"
+    },
+    "ChoiceListEditor": {
+        "Error in dropdown condition": "Erreur dans la condition de la liste déroulante",
+        "No choices to select": "Aucun choix à sélectionner",
+        "No choices matching condition": "Aucun choix correspondant à la condition"
+    },
+    "DropdownConditionConfig": {
+        "Invalid columns: {{colIds}}": "Colonnes invalides : {{colIds}}",
+        "Set dropdown condition": "Définir la condition de la liste déroulante",
+        "Dropdown Condition": "Condition de la liste déroulante"
+    },
+    "DropdownConditionEditor": {
+        "Enter condition.": "Saisir la condition."
+    },
+    "ReferenceUtils": {
+        "Error in dropdown condition": "Erreur dans la condition de la liste déroulant",
+        "No choices matching condition": "Aucun choix correspondant à la condition",
+        "No choices to select": "Aucun choix à sélectionner"
+    },
+    "FormRenderer": {
+        "Submit": "Soumettre",
+        "Select...": "Sélectionner...",
+        "Search": "Rechercher",
+        "Reset": "Réinitialiser"
+    },
+    "widgetTypesMap": {
+        "Table": "Table",
+        "Form": "Formulaire",
+        "Custom": "Personnalisée",
+        "Chart": "Graphique",
+        "Card List": "Liste de fiches",
+        "Card": "Fiche",
+        "Calendar": "Calendrier"
+    },
+    "TimingPage": {
+        "Max Time (s)": "Temps maximum (s)",
+        "Average Time (s)": "Temps moyen (s)",
+        "Column ID": "ID de la colonne",
+        "Loading timing data. Don't close this tab.": "Chargement des données de chronométrage. Ne pas fermer cet onglet.",
+        "Formula timer": "Chronomètre de formule",
+        "Number of Calls": "Nombre d'appels",
+        "Table ID": "ID de la table",
+        "Total Time (s)": "Temps total"
+    },
+    "DocTutorial": {
+        "Next": "Suivant",
+        "Restart": "Redémarrer",
+        "Click to expand": "Cliquez pour agrandir",
+        "End tutorial": "Fin du tutoriel",
+        "Do you want to restart the tutorial? All progress will be lost.": "Voulez-vous recommencer le tutoriel ? Tous les progrès seront perdus.",
+        "Previous": "Précédent",
+        "Finish": "Finir"
+    },
+    "OnboardingCards": {
+        "Complete our basics tutorial": "Complétez notre tutoriel des bases",
+        "Learn the basic of reference columns, linked widgets, column types, & cards.": "Apprenez les bases des colonnes de référence, des vues liées, des types de colonnes et des fiches.",
+        "3 minute video tour": "Visite guidée vidéo de 3 minutes",
+        "Complete the tutorial": "Compléter le tutoriel",
+        "Learn the basics of reference columns, linked widgets, column types, & cards.": "Apprenez les bases des colonnes de référence, des vues liées, des types de colonnes et des fiches."
+    },
+    "OnboardingPage": {
+        "Back": "Retour",
+        "Discover Grist in 3 minutes": "Découvrez Grist en 3 minutes",
+        "Go hands-on with the Grist Basics tutorial": "Mettez la main à la pâte avec le tutoriel des bases Grist",
+        "Type here": "Tapez ici",
+        "Welcome": "Bienvenue",
+        "What organization are you with?": "Quelle est l'organisation à laquelle vous appartenez ?",
+        "Your organization": "Votre organisation",
+        "Your role": "Votre rôle",
+        "Next step": "Prochaine étape",
+        "Skip step": "Sauter cette étape",
+        "Skip tutorial": "Sauter le tutoriel",
+        "Go to the tutorial!": "Allez au tutoriel !",
+        "Tell us who you are": "Dites-nous qui vous êtes",
+        "What brings you to Grist (you can select multiple)?": "Qu'est-ce qui vous amène à Grist (vous pouvez en sélectionner plusieurs) ?",
+        "What is your role?": "Quel est votre rôle ?"
+    },
+    "ToggleEnterpriseWidget": {
+        "Disable Grist Enterprise": "Désactiver Grist Entreprise",
+        "Enable Grist Enterprise": "Activer Grist Entreprise",
+        "Grist Enterprise is **enabled**.": "Grist Entreprise est **activité**.",
+        "An activation key is used to run Grist Enterprise after a trial period\nof 30 days has expired. Get an activation key by [contacting us]({{contactLink}}) today. You do\nnot need an activation key to run Grist Core.\n\nLearn more in our [Help Center]({{helpCenter}}).": "Une clef d'activation est nécessaire pour utiliser Grist Enterprise au delà de la période d'évaluation\nde 30 jours. Obtenez une clef d'activation en [nous contactant]({{contactLink}}) aujourd'hui. Vous\nn'avez pas besoin de clef d'activation pour utiliser Grist Core.\n\nEn savoir plus dans le [Centre d'Aide]({{helpCenter}}).",
+        "An activation key is used to run Grist Enterprise after a trial period\nof 30 days has expired. Get an activation key by [signing up for Grist\nEnterprise]({{signupLink}}). You do not need an activation key to run\nGrist Core.\n\nLearn more in our [Help Center]({{helpCenter}}).": "Une clef d'activation est nécessaire pour utiliser Grist Enterprise après la période d'évaluation\nde 30 jours. Obtenez une clef d'activation en [vous connectant à Grist\nEnterprise]({{signupLink}}). Vous n'avez pas besoin de clef d'activation pour utiliser\nGrist Core.\n\nEn savoir plus dans notre [Centre d'Aide]({{helpCenter}})."
+    },
+    "ViewLayout": {
+        "Delete": "Supprimer",
+        "Delete data and this widget.": "Supprimer les données et le composant.",
+        "Keep data and delete widget. Table will remain available in {{rawDataLink}}": "Garder les données et supprimer le composant. La table restera disponible dans {{rawDataLink}}",
+        "Table {{tableName}} will no longer be visible": "La table {{tableName}} ne sera plus visible",
+        "raw data page": "page de données brutes"
+    },
+    "CustomWidgetGallery": {
+        "(Missing info)": "(Information manquante)",
+        "Add Widget": "Ajouter un widget",
+        "Developer:": "Développeur/se :",
+        "Add a widget from outside this gallery.": "Ajouter un widget de votre propre galerie.",
+        "Cancel": "Annuler",
+        "Change Widget": "Modifier le widget",
+        "Choose Custom Widget": "Choisir un widget personnalisé",
+        "Community Widget": "Widget de la communauté",
+        "Custom URL": "URL personnalisée",
+        "Grist Widget": "Widget Grist",
+        "Last updated:": "Dernière mise à jour :",
+        "No matching widgets": "Pas de widgets correspondants",
+        "Search": "Rechercher",
+        "Widget URL": "URL du widget",
+        "Learn more about Custom Widgets": "En savoir plus sur les Widgets personnalisés",
+        "Add Your Own Widget": "Ajouter votre propre widget"
+    },
+    "markdown": {
+        "The toggle is **off**": "Le switch est **désactivé**",
+        "The toggle is **on**": "The switch est **actif**",
+        "# New Markdown Function\n *\n *      We can _write_ [the usual Markdown](https:": {
+            "": {
+                "markdownguide.org) *inside*\n *      a Grainjs element.": "# Nouvelle fonction Markdown\n *\n *      Nous pouvons _écrire_ du [Markdown hibituel](https://markdownguide.org) *à l'intérieur*\n *      d'un Élément Grainjs."
+            }
+        }
+    },
+    "markdown.d": {
+        "The toggle is **off**": "Le switch est **désactivé**",
+        "The toggle is **on**": "Le switch est **actif**",
+        "# New Markdown Function\n *\n *      We can _write_ [the usual Markdown](https:": {
+            "": {
+                "markdownguide.org) *inside*\n *      a Grainjs element.": "# Nouvelle fonction Markdown\n *\n *      Nous pouvons _écrire_ [avec la syntaxe Markdown](https://markdownguide.org) *directement*\n *      dans un élément Grainjs."
+            }
+        }
+    },
+    "HomeIntroCards": {
+        "3 minute video tour": "Visite guidée de 3 minutes",
+        "Blank document": "Document vide",
+        "Find solutions and explore more resources {{helpCenterLink}}": "Trouver des solutions et parcourir d'autres ressources {{helpCenterLink}}",
+        "Finish our basics tutorial": "Terminer le tutoriel sur les bases",
+        "Help center": "Centre d'aide",
+        "Import file": "Importer un fichier",
+        "Learn more {{webinarsLinks}}": "En savoir plus {{webinarsLinks}}",
+        "Start a new document": "Commencer un nouveau document",
+        "Templates": "Modèles",
+        "Tutorial": "Tutoriel",
+        "Webinars": "Webinaires"
+    },
+    "ReverseReferenceConfig": {
+        "Add two-way reference": "Ajouter une référence bi-directionnelle",
+        "Delete": "Supprimer",
+        "Delete column {{column}} in table {{table}}?": "Supprimer la colonne {{column}} de la table {{table}} ?",
+        "Two-way Reference": "Référence bi-directionnelle",
+        "Target table": "Table cible",
+        "Delete two-way reference?": "Supprimer la référence bi-directionnelle ?",
+        "Column": "Colonne",
+        "Table": "Table",
+        "It is the reverse of the reference column {{column}} in table {{table}}.": "Il s'agit de la référence retour de la colonne {{column}} de la table {{table}}."
+    },
+    "SupportGristButton": {
+        "Admin Panel": "Panneau d'administration",
+        "Close": "Fermer",
+        "Help Center": "Centre d'aide",
+        "Opt in to Telemetry": "Activer la télémétrie",
+        "Opted In": "Activé",
+        "Support Grist": "Soutenir Grist",
+        "Thank you! Your trust and support is greatly appreciated. Opt out any time from the {{link}} in the user menu.": "Merci ! Votre confiance et votre soutien est grandement apprécié. Vous pouvez désactiver à n'importe quel moment via {{link}} dans le menu utilisateur."
+    },
+    "buildReassignModal": {
+        "Cancel": "Annuler",
+        "Each {{targetTable}} record may only be assigned to a single {{sourceTable}} record.": "Chaque enregistrement de {{targetTable}} ne peut être assigné qu'à un seul enregistrement de {{sourceTable}}.",
+        "Reassign": "Réassigner",
+        "Reassign to new {{sourceTable}} records.": "Réassigner à des nouveaux records de {{sourceTable}}.",
+        "Record already assigned_one": "Enregistrement déjà assigné",
+        "Record already assigned_other": "Enregistrement déjà assigné",
+        "Reassign to {{sourceTable}} record {{sourceName}}.": "Réaffecté à {{sourceTable}} de {{sourceName}}.",
+        "{{targetTable}} record {{targetName}} is already assigned to {{sourceTable}} record          {{oldSourceName}}.": "l'enregistrement {{targetName}} de {{targetTable}} est déjà assigné à {{oldSourceName}} de {{sourceTable}}."
+    },
+    "AdminPanelName": {
+        "Admin Panel": "Panneau d'administration"
+    },
+    "AuditLogStreamingConfig": {
+        "Splunk": "Splunk",
+        "Add destination": "Ajouter destination",
+        "Add streaming destination": "Ajouter une destination de streaming",
+        "Are you sure you want to delete this streaming destination? This action cannot be undone.": "Êtes-vous certain de vouloir supprimer cette destination de streaming ? Cette action ne pourra pas être annulée.",
+        "Delete streaming destination?": "Effacer la destination de streaming ?",
+        "Delete": "Effacer",
+        "Destination": "Destination",
+        "Destinations": "Destinations",
+        "Edit": "Modifier",
+        "Enter URL": "Entrer une URL",
+        "Enter token": "Entrer un token",
+        "Learn more": "En savoir plus",
+        "Other": "Autre",
+        "Save": "Enregistrer",
+        "Start streaming": "Démarrer le streaming",
+        "Token": "Token",
+        "URL": "URL",
+        "Cancel": "Abandonner",
+        "Edit streaming destination": "Modifier la destination de streaming"
+    },
+    "AuditLogsPage": {
+        "Audit logs for {{siteName}}": "Journaux d'audit pour {{siteName}}",
+        "Audit Logs": "Journaux d'audit",
+        "Home": "Accueil",
+        "Log streaming": "Flux de journalisation",
+        "Contact us": "Nous contacter",
+        "Only site owners may access audit logs.": "Seuls les propriétaires de site peuvent accéder aux journaux d'audit.",
+        "upgrade your plan": "actualiser son contrat"
+    },
+    "DocList": {
+        "All": "Tous",
+        "Delete": "Supprimer",
+        "Delete {{name}}": "Supprimer {{name}}",
+        "Edited {{at}}": "Modifié le {{at}}",
+        "Last edited": "Dernière modification",
+        "Manage users": "Gérer les utilisateurs",
+        "Move": "Déplacer",
+        "Name": "Nom",
+        "Pin": "Epingler",
+        "Sort by date": "Trier par date",
+        "Sort by name": "Trier par nom",
+        "Unpin": "Désépingler",
+        "No documents to show.": "Aucun document à afficher.",
+        "Recent": "Récent",
+        "Pinned": "Epinglé",
+        "Rename and set icon": "Renommer et définir une icône"
+    },
+    "RenameDocModal": {
+        "Icon": "Icône",
+        "Name": "Nom"
     }
 }

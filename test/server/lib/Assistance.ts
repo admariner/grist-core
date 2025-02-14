@@ -1,11 +1,12 @@
-import {createDocTools} from "test/server/docTools";
+import {AssistanceState} from 'app/common/AssistancePrompts';
 import {ActiveDoc} from "app/server/lib/ActiveDoc";
-import {DEPS, OpenAIAssistant, sendForCompletion} from "app/server/lib/Assistance";
+import {DEPS, OpenAIAssistant, sendForCompletion} from 'app/server/lib/Assistance';
+import {DocSession} from 'app/server/lib/DocSession';
 import {assert} from 'chai';
-import * as sinon from 'sinon';
 import {Response} from 'node-fetch';
-import {DocSession} from "app/server/lib/DocSession";
-import {AssistanceState} from "app/common/AssistancePrompts";
+import * as sinon from 'sinon';
+import {createDocTools} from 'test/server/docTools';
+import {EnvironmentSnapshot} from 'test/server/testUtils';
 
 // For some reason, assert.isRejected is not getting defined,
 // though test/chai-as-promised.js should be taking care of this.
@@ -14,20 +15,34 @@ const chai = require('chai');
 const chaiAsPromised = require('chai-as-promised');
 chai.use(chaiAsPromised);
 
+/**
+ * We no longer use a longer context model by default, but we still
+ * test this configuration.
+ */
+const LONGER_CONTEXT_MODEL_FOR_TEST = "fake";
+
 describe('Assistance', function () {
   this.timeout(10000);
 
   const docTools = createDocTools({persistAcrossCases: true});
-  const tableId = "Table1";
+  const table1Id = "Table1";
+  const table2Id = "Table2";
   let session: DocSession;
   let doc: ActiveDoc;
+  let oldEnv: EnvironmentSnapshot;
   before(async () => {
+    oldEnv = new EnvironmentSnapshot();
     process.env.OPENAI_API_KEY = "fake";
+    process.env.ASSISTANT_LONGER_CONTEXT_MODEL = LONGER_CONTEXT_MODEL_FOR_TEST;
     session = docTools.createFakeSession();
     doc = await docTools.createDoc('test.grist');
     await doc.applyUserActions(session, [
-      ["AddTable", tableId, [{id: "A"}, {id: "B"}, {id: "C"}]],
+      ["AddTable", table1Id, [{id: "A"}, {id: "B"}, {id: "C"}]],
+      ["AddTable", table2Id, [{id: "A"}, {id: "B"}, {id: "C"}]],
     ]);
+  });
+  after(async function () {
+    oldEnv.restore();
   });
 
   const colId = "C";
@@ -36,7 +51,7 @@ describe('Assistance', function () {
   function checkSendForCompletion(state?: AssistanceState) {
     return sendForCompletion(session, doc, {
       conversationId: 'conversationId',
-      context: {type: 'formula', tableId, colId},
+      context: {type: 'formula', tableId: table1Id, colId},
       state,
       text: userMessageContent,
     });
@@ -108,7 +123,7 @@ describe('Assistance', function () {
       + "\n\nLet me know if there's anything else I can help with.";
     assert.deepEqual(result, {
         suggestedActions: [
-          ["ModifyColumn", tableId, colId, {formula: suggestedFormula}]
+          ["ModifyColumn", table1Id, colId, {formula: suggestedFormula}]
         ],
         suggestedFormula,
         reply: replyWithSuggestedFormula,
@@ -169,7 +184,7 @@ describe('Assistance', function () {
       checkSendForCompletion(),
       "Sorry, the assistant is unavailable right now. " +
       "Try again in a few minutes. \n" +
-      '(Error: OpenAI API returned status 500: {"status":500})',
+      '(Error: AI service provider API returned status 500: {"status":500})',
     );
     assert.equal(fakeFetch.callCount, 3);
   });
@@ -202,8 +217,39 @@ describe('Assistance', function () {
     );
     checkModels([
       OpenAIAssistant.DEFAULT_MODEL,
-      OpenAIAssistant.DEFAULT_LONGER_CONTEXT_MODEL,
+      LONGER_CONTEXT_MODEL_FOR_TEST,
+      LONGER_CONTEXT_MODEL_FOR_TEST,
     ]);
+  });
+
+  it('switches to a shorter prompt if the longer model exceeds its token limit', async function () {
+    fakeResponse = () => ({
+      error: {
+        code: "context_length_exceeded",
+      },
+      status: 400,
+    });
+    await assert.isRejected(
+      checkSendForCompletion(),
+      /You'll need to either shorten your message or delete some columns/
+    );
+    fakeFetch.getCalls().map((callInfo, i) => {
+      const [, request] = callInfo.args;
+      const {messages} = JSON.parse(request.body);
+      const systemMessageContent = messages[0].content;
+      const shortCallIndex = 2;
+      if (i === shortCallIndex) {
+        assert.match(systemMessageContent, /class Table1/);
+        assert.notMatch(systemMessageContent, /class Table2/);
+        assert.notMatch(systemMessageContent, /def lookupOne/);
+        assert.lengthOf(systemMessageContent, 1001);
+      } else {
+        assert.match(systemMessageContent, /class Table1/);
+        assert.match(systemMessageContent, /class Table2/);
+        assert.match(systemMessageContent, /def lookupOne/);
+        assert.lengthOf(systemMessageContent, 1982);
+      }
+    });
   });
 
   it('switches to a longer model with no retries if the model runs out of tokens while responding', async function () {
@@ -221,7 +267,8 @@ describe('Assistance', function () {
     );
     checkModels([
       OpenAIAssistant.DEFAULT_MODEL,
-      OpenAIAssistant.DEFAULT_LONGER_CONTEXT_MODEL,
+      LONGER_CONTEXT_MODEL_FOR_TEST,
+      LONGER_CONTEXT_MODEL_FOR_TEST,
     ]);
   });
 
@@ -244,7 +291,8 @@ describe('Assistance', function () {
     );
     checkModels([
       OpenAIAssistant.DEFAULT_MODEL,
-      OpenAIAssistant.DEFAULT_LONGER_CONTEXT_MODEL,
+      LONGER_CONTEXT_MODEL_FOR_TEST,
+      LONGER_CONTEXT_MODEL_FOR_TEST,
     ]);
   });
 
@@ -275,11 +323,11 @@ describe('Assistance', function () {
     const result = await checkSendForCompletion();
     checkModels([
       OpenAIAssistant.DEFAULT_MODEL,
-      OpenAIAssistant.DEFAULT_LONGER_CONTEXT_MODEL,
-      OpenAIAssistant.DEFAULT_LONGER_CONTEXT_MODEL,
+      LONGER_CONTEXT_MODEL_FOR_TEST,
+      LONGER_CONTEXT_MODEL_FOR_TEST,
     ]);
     assert.deepEqual(result.suggestedActions, [
-      ["ModifyColumn", tableId, colId, {formula: "123"}]
+      ["ModifyColumn", table1Id, colId, {formula: "123"}]
     ]);
   });
 });

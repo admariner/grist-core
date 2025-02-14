@@ -2,7 +2,7 @@ import {GristLoadConfig} from 'app/common/gristUrls';
 import {BillingAccount} from 'app/gen-server/entity/BillingAccount';
 import {Organization} from 'app/gen-server/entity/Organization';
 import {Product} from 'app/gen-server/entity/Product';
-import {HomeDBManager} from 'app/gen-server/lib/HomeDBManager';
+import {HomeDBManager} from 'app/gen-server/lib/homedb/HomeDBManager';
 import {INotifier} from 'app/server/lib/INotifier';
 import {AxiosRequestConfig} from "axios";
 import {delay} from 'bluebird';
@@ -21,7 +21,7 @@ export function configForUser(username: string): AxiosRequestConfig {
     }
   };
   if (username !== 'Anonymous') {
-    config.headers.Authorization = 'Bearer api_key_for_' + username.toLowerCase();
+    config.headers!.Authorization = 'Bearer api_key_for_' + username.toLowerCase();
   }
   return config;
 }
@@ -46,7 +46,6 @@ export async function createUser(dbManager: HomeDBManager, name: string): Promis
   const username = name.toLowerCase();
   const email = `${username}@getgrist.com`;
   const user = await dbManager.getUserByLogin(email, {profile: {email, name}});
-  if (!user) { throw new Error('failed to create user'); }
   user.apiKey = `api_key_for_${username}`;
   await user.save();
   const userHome = (await dbManager.getOrg({userId: user.id}, null)).data;

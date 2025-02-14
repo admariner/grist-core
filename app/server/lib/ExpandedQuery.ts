@@ -1,5 +1,6 @@
 import { ServerQuery } from 'app/common/ActiveDocAPI';
 import { ApiError } from 'app/common/ApiError';
+import { CellValue } from 'app/common/DocActions';
 import { DocData } from 'app/common/DocData';
 import { parseFormula } from 'app/common/Formula';
 import { removePrefix } from 'app/common/gutil';
@@ -28,9 +29,6 @@ export interface ExpandedQuery extends ServerQuery {
 
   // A list of selections for regular data and data computed via formulas.
   selects?: string[];
-
-  // A list of conditions for filtering query results.
-  wheres?: string[];
 }
 
 /**
@@ -46,7 +44,8 @@ export function expandQuery(iquery: ServerQuery, docData: DocData, onDemandFormu
   const query: ExpandedQuery = {
     tableId: iquery.tableId,
     filters: iquery.filters,
-    limit: iquery.limit
+    limit: iquery.limit,
+    where: iquery.where,
   };
 
   // Start accumulating a set of joins and selects needed for the query.
@@ -59,7 +58,7 @@ export function expandQuery(iquery: ServerQuery, docData: DocData, onDemandFormu
     const tables = docData.getMetaTable('_grist_Tables');
     const columns = docData.getMetaTable('_grist_Tables_column');
     const tableRef = tables.findRow('tableId', query.tableId);
-    if (!tableRef) { throw new ApiError('table not found', 404); }
+    if (!tableRef) { throw new ApiError('table not found: ' + query.tableId, 404); }
 
     // Find any references to other tables.
     const dataColumns = columns.filterRecords({parentId: tableRef, isFormula: false});
@@ -131,6 +130,24 @@ export function expandQuery(iquery: ServerQuery, docData: DocData, onDemandFormu
   query.joins = [...joins];
   query.selects = [...selects];
   return query;
+}
+
+export function getFormulaErrorForExpandQuery(docData: DocData, tableId: string, colId: string): CellValue {
+  // On-demand tables may produce several kinds of error messages, e.g. "Formula not supported" or
+  // "Cannot find column". We construct the full query to get the basic message for the requested
+  // column, then tack on the detail, which is fine to be the same for all of them.
+  const iquery: ServerQuery = {tableId, filters: {}};
+  const expanded = expandQuery(iquery, docData, true);
+  const constantValue = expanded.constants?.[colId];
+  if (constantValue?.length === 2) {
+    return [GristObjCode.Exception, constantValue[1],
+`Not supported in on-demand tables.
+
+This table is marked as an on-demand table. Such tables don't support most formulas. \
+For proper formula support, unmark it as on-demand.
+`];
+  }
+  return null;
 }
 
 /**
@@ -229,12 +246,22 @@ export function buildComparisonQuery(leftTableId: string, rightTableId: string, 
     }
   }
   if (whereConditions.length > 0) {
-    wheres.push(`(${whereConditions.join(' OR ')})`);
+    wheres.push(combineExpr('OR', whereConditions));
   }
 
   // Copy decisions to the query object, and return.
   query.joins = joins;
   query.selects = selects;
-  query.wheres = wheres;
+
+  if (wheres) {
+    query.where = {
+      clause: combineExpr('AND', [query.where?.clause, ...wheres]),
+      params: query.where?.params ?? [],
+    };
+  }
   return query;
+}
+
+export function combineExpr(operator: string, parts: Array<string|undefined>): string {
+  return parts.filter(p => Boolean(p)).map(p => `(${p})`).join(` ${operator} `);
 }

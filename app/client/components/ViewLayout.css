@@ -9,15 +9,17 @@
   align-items: center;
   gap: 8px;
   align-self: flex-start;
-  margin-top: -1px;
 }
 
 .viewsection_title {
+  align-items: center;
   flex-shrink: 0;
   cursor: default;
-  height: 24px;
+  min-height: 24px;
   margin-left: -16px;   /* to include drag handle that shows up on hover */
+  margin-bottom: 4px;
   white-space: nowrap;
+  overflow: hidden;
 }
 
 .viewsection_title, .viewsection_title_font {
@@ -127,6 +129,7 @@
   z-index: 1;
   width: 100%;
   height: 100%;
+  color: var(--grist-theme-text-light, var(--grist-color-slate));
   background-color: rgba(0, 0, 0, 0.1);
   font-size: 12pt;
 }

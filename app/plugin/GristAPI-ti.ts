@@ -4,6 +4,16 @@
 import * as t from "ts-interface-checker";
 // tslint:disable:object-literal-key-quotes
 
+export const UIRowId = t.union("number", t.lit('new'));
+
+export const CursorPos = t.iface([], {
+  "rowId": t.opt("UIRowId"),
+  "rowIndex": t.opt("number"),
+  "fieldIndex": t.opt("number"),
+  "sectionId": t.opt("number"),
+  "linkingRowIds": t.opt(t.array("UIRowId")),
+});
+
 export const ComponentKind = t.union(t.lit("safeBrowser"), t.lit("safePython"), t.lit("unsafeNode"));
 
 export const GristAPI = t.iface([], {
@@ -21,11 +31,18 @@ export const GristDocAPI = t.iface([], {
   "getAccessToken": t.func("AccessTokenResult", t.param("options", "AccessTokenOptions")),
 });
 
+export const FetchSelectedOptions = t.iface([], {
+  "keepEncoded": t.opt("boolean"),
+  "format": t.opt(t.union(t.lit('rows'), t.lit('columns'))),
+  "includeColumns": t.opt(t.union(t.lit('shown'), t.lit('normal'), t.lit('all'))),
+});
+
 export const GristView = t.iface([], {
-  "fetchSelectedTable": t.func("any"),
-  "fetchSelectedRecord": t.func("any", t.param("rowId", "number")),
+  "fetchSelectedTable": t.func("any", t.param("options", "FetchSelectedOptions", true)),
+  "fetchSelectedRecord": t.func("any", t.param("rowId", "number"), t.param("options", "FetchSelectedOptions", true)),
   "allowSelectBy": t.func("void"),
-  "setSelectedRows": t.func("void", t.param("rowIds", t.array("number"))),
+  "setSelectedRows": t.func("void", t.param("rowIds", t.union(t.array("number"), "null"))),
+  "setCursorPos": t.func("void", t.param("pos", "CursorPos")),
 });
 
 export const AccessTokenOptions = t.iface([], {
@@ -39,9 +56,12 @@ export const AccessTokenResult = t.iface([], {
 });
 
 const exportedTypeSuite: t.ITypeSuite = {
+  UIRowId,
+  CursorPos,
   ComponentKind,
   GristAPI,
   GristDocAPI,
+  FetchSelectedOptions,
   GristView,
   AccessTokenOptions,
   AccessTokenResult,

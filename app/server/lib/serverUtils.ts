@@ -1,16 +1,18 @@
-import bluebird from 'bluebird';
-import { ChildProcess } from 'child_process';
-import * as net from 'net';
-import * as path from 'path';
-import { ConnectionOptions } from 'typeorm';
-import uuidv4 from 'uuid/v4';
-import {AbortSignal} from 'node-abort-controller';
-
 import {EngineCode} from 'app/common/DocumentSettings';
-import {TelemetryMetadataByLevel} from 'app/common/Telemetry';
+import {OptDocSession} from 'app/server/lib/DocSession';
 import log from 'app/server/lib/log';
+import {getLogMeta} from 'app/server/lib/sessionUtils';
 import {OpenMode, SQLiteDB} from 'app/server/lib/SQLiteDB';
-import {getDocSessionAccessOrNull, getDocSessionUser, OptDocSession} from './DocSession';
+import bluebird from 'bluebird';
+import {ChildProcess} from 'child_process';
+import * as net from 'net';
+import {AbortSignal} from 'node-abort-controller';
+import * as path from 'path';
+import {ConnectionOptions} from 'typeorm';
+import {v4 as uuidv4} from 'uuid';
+
+// This method previously lived in this file. Re-export to avoid changing imports all over.
+export {timeoutReached} from 'app/common/gutil';
 
 /**
  * Promisify a node-style callback function. E.g.
@@ -100,20 +102,6 @@ export function exitPromise(child: ChildProcess): Promise<number|string> {
 }
 
 /**
- * Resolves to true if promise is still pending after msec milliseconds have passed. Otherwise
- * returns false, including when promise is rejected.
- */
-export function timeoutReached<T>(msec: number, promise: Promise<T>): Promise<boolean> {
-  const timedOut = {};
-  // Be careful to clean up the timer after ourselves, so it doesn't remain in the event loop.
-  let timer: NodeJS.Timer;
-  const delayPromise = new Promise<any>((resolve) => (timer = setTimeout(() => resolve(timedOut), msec)));
-  return Promise.race([promise, delayPromise])
-  .then((res) => { clearTimeout(timer); return res === timedOut; })
-  .catch(() => false);
-}
-
-/**
  * Get database url in DATABASE_URL format popularized by heroku, suitable for
  * use by psql, sqlalchemy, etc.
  */
@@ -141,45 +129,16 @@ export async function checkAllegedGristDoc(docSession: OptDocSession, fname: str
     const integrityCheckResults = await db.all('PRAGMA integrity_check');
     if (integrityCheckResults.length !== 1 || integrityCheckResults[0].integrity_check !== 'ok') {
       const uuid = uuidv4();
-      log.info('Integrity check failure on import', {uuid, integrityCheckResults,
-                                                     ...getLogMetaFromDocSession(docSession)});
+      log.info('Integrity check failure on import', {
+        uuid,
+        integrityCheckResults,
+        ...getLogMeta(docSession),
+      });
       throw new Error(`Document failed integrity checks - is it corrupted? Event ID: ${uuid}`);
     }
   } finally {
     await db.close();
   }
-}
-
-/**
- * Extract access, userId, email, and client (if applicable) from session, for logging purposes.
- */
-export function getLogMetaFromDocSession(docSession: OptDocSession) {
-  const client = docSession.client;
-  const access = getDocSessionAccessOrNull(docSession);
-  const user = getDocSessionUser(docSession);
-  return {
-    access,
-    ...(user ? {userId: user.id, email: user.email} : {}),
-    ...(client ? client.getLogMeta() : {}),   // Client if present will repeat and add to user info.
-  };
-}
-
-/**
- * Extract telemetry metadata from session.
- */
-export function getTelemetryMetaFromDocSession(docSession: OptDocSession): TelemetryMetadataByLevel {
-  const client = docSession.client;
-  const access = getDocSessionAccessOrNull(docSession);
-  const user = getDocSessionUser(docSession);
-  return {
-    limited: {
-      access,
-    },
-    full: {
-      ...(user ? {userId: user.id} : {}),
-      ...(client ? client.getFullTelemetryMeta() : {}),   // Client if present will repeat and add to user info.
-    },
-  };
 }
 
 /**

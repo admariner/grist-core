@@ -202,7 +202,6 @@ describe("DuplicateDocument", function() {
     await driver.find('.test-copy-dest-org .test-select-open').click();
     await driver.findContent('.test-select-menu li', 'Personal').click();
     await gu.waitForServer();
-    assert.equal(await driver.find('.test-copy-dest-workspace').isPresent(), false);
     assert.equal(await driver.find('.test-copy-warning').isPresent(), false);
     assert.equal(await driver.find('.test-modal-confirm').getAttribute('disabled'), null);
 
@@ -218,5 +217,24 @@ describe("DuplicateDocument", function() {
     // Remove document
     await driver.find(".test-bc-workspace").click();
     await gu.removeDoc(`DuplicateTest2 ${name} Copy`);
+  });
+
+  it("should not auto-start tour if a document with a tour is copied as a template", async function() {
+    const session = await gu.session().teamSite.login();
+    await session.tempDoc(cleanup, 'doctour.grist');
+    await session.tempWorkspace(cleanup, 'Test Workspace');
+    assert.isTrue(await driver.findWait('.test-onboarding-popup', 1000).isPresent());
+    await driver.find('.test-onboarding-close').click();
+    await gu.waitForServer();
+
+    await driver.find('.test-tb-share').click();
+    await driver.find('.test-save-copy').click();
+    await driver.findWait('.test-modal-dialog', 1000);
+    await driver.find('.test-save-as-template').click();
+    await gu.completeCopy({destName: 'DuplicateTest3', destWorkspace: 'Test Workspace'});
+
+    // Give it a second, just to be sure the tour doesn't appear.
+    await driver.sleep(1000);
+    assert.isFalse(await driver.find('.test-onboarding-popup').isPresent());
   });
 });

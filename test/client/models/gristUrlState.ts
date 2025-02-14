@@ -1,4 +1,3 @@
-import * as log from 'app/client/lib/log';
 import {HistWindow, UrlState} from 'app/client/lib/UrlState';
 import {getLoginUrl, UrlStateImpl} from 'app/client/models/gristUrlState';
 import {IGristUrlState} from 'app/common/gristUrls';
@@ -42,7 +41,6 @@ describe('gristUrlState', function() {
     // These grainjs browserGlobals are needed for using dom() in tests.
     const jsdomDoc = new JSDOM("<!doctype html><html><body></body></html>");
     pushGlobals(jsdomDoc.window);
-    sandbox.stub(log, 'debug');
   });
 
   afterEach(function() {
@@ -90,6 +88,12 @@ describe('gristUrlState', function() {
     // Billing routes
     assert.deepEqual(prod.decodeUrl(new URL('https://bar.example.com/o/baz/billing')),
       {org: 'baz', billing: 'billing'});
+
+    // API routes
+    assert.deepEqual(prod.decodeUrl(new URL('https://bar.example.com/api/docs/bar')),
+      {org: 'bar', doc: 'bar', api: true});
+    assert.deepEqual(prod.decodeUrl(new URL('http://localhost:8080/o/baz/api/docs/bar')),
+      {org: 'baz', doc: 'bar', api: true});
   });
 
   it('should decode query strings in URLs correctly', function() {
@@ -139,6 +143,11 @@ describe('gristUrlState', function() {
     // Billing routes
     assert.equal(prod.encodeUrl({org: 'baz', billing: 'billing'}, hostBase),
       'https://baz.example.com/billing');
+
+    // API routes
+    assert.equal(prod.encodeUrl({org: 'baz', doc: 'bar', api: true}, hostBase), 'https://baz.example.com/api/docs/bar');
+    assert.equal(prod.encodeUrl({org: 'baz', doc: 'bar', api: true}, localBase),
+      'http://localhost:8080/o/baz/api/docs/bar');
   });
 
   it('should encode state in billing URLs correctly', function() {
@@ -225,6 +234,22 @@ describe('gristUrlState', function() {
     assert.equal(mockWindow.location.href, 'https://foo.example.com/ws/12/');
     assert.deepEqual(state.state.get(), {org: 'foo', ws: 12});
     assert.equal(state.makeUrl({ws: 4}), 'https://foo.example.com/ws/4/');
+
+    // Check form URLs in prod setup. They are produced on document pages.
+    await state.pushUrl({org: 'foo', doc: 'abc'});
+    state.loadState();
+    assert.equal(
+      state.makeUrl({doc: undefined, form: {vsId: 4, shareKey: 'key'}}),
+      'https://foo.example.com/forms/key/4'
+    );
+    assert.equal(
+      state.makeUrl({doc: 'abc', form: {vsId: 4}}),
+      'https://foo.example.com/doc/abc/f/4'
+    );
+    assert.equal(
+      state.makeUrl({doc: 'abc', slug: '123', form: {vsId: 4}}),
+      'https://foo.example.com/abc/123/f/4'
+    );
   });
 
   it('should produce correct results with single-org config', async function() {
@@ -254,6 +279,22 @@ describe('gristUrlState', function() {
     assert.equal(mockWindow.location.href, 'https://example.com/o/foo/');
     assert.deepEqual(state.state.get(), {org: 'foo'});
     assert.equal(link.getAttribute('href'), 'https://example.com/o/foo/ws/4/');
+
+    // Check form URLs in single org setup from document pages.
+    await state.pushUrl({org: 'foo', doc: 'abc'});
+    state.loadState();
+    assert.equal(
+      state.makeUrl({doc: undefined, form: {vsId: 4, shareKey: 'key'}}),
+      'https://example.com/o/foo/forms/key/4'
+    );
+    assert.equal(
+      state.makeUrl({doc: 'abc', form: {vsId: 4}}),
+      'https://example.com/o/foo/doc/abc/f/4'
+    );
+    assert.equal(
+      state.makeUrl({doc: 'abc', slug: '123', form: {vsId: 4}}),
+      'https://example.com/o/foo/abc/123/f/4'
+    );
   });
 
   it('should produce correct results with custom config', async function() {

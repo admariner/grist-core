@@ -1,19 +1,29 @@
-import {makeT} from 'app/client/lib/localization';
 import {loadUserManager} from 'app/client/lib/imports';
-import {ImportSourceElement} from 'app/client/lib/ImportSourceElement';
-import {reportError} from 'app/client/models/AppModel';
-import {docUrl, urlState} from 'app/client/models/gristUrlState';
+import {makeT} from 'app/client/lib/localization';
+import {urlState} from 'app/client/models/gristUrlState';
 import {HomeModel} from 'app/client/models/HomeModel';
 import {getWorkspaceInfo, workspaceName} from 'app/client/models/WorkspaceInfo';
 import {addNewButton, cssAddNewButton} from 'app/client/ui/AddNewButton';
-import {docImport, importFromPlugin} from 'app/client/ui/HomeImports';
-import {
-  cssLinkText, cssMenuTrigger, cssPageEntry, cssPageIcon, cssPageLink, cssSpacer
-} from 'app/client/ui/LeftPanelCommon';
+import {getAdminPanelName} from 'app/client/ui/AdminPanelName';
 import {createVideoTourToolsButton} from 'app/client/ui/OpenVideoTour';
 import {transientInput} from 'app/client/ui/transientInput';
 import {testId, theme} from 'app/client/ui2018/cssVars';
 import {icon} from 'app/client/ui2018/icons';
+import {
+  createHelpTools,
+  cssHomeTools,
+  cssLeftPanel,
+  cssLinkText,
+  cssMenuTrigger,
+  cssPageColorIcon,
+  cssPageEntry,
+  cssPageIcon,
+  cssPageLink,
+  cssScrollPane,
+  cssSectionHeader,
+  cssSectionHeaderText
+} from 'app/client/ui/LeftPanelCommon';
+import {newDocMethods} from 'app/client/ui/NewDocMethods';
 import {menu, menuIcon, menuItem, upgradableMenuItem, upgradeText} from 'app/client/ui2018/menus';
 import {confirmModal} from 'app/client/ui2018/modals';
 import {commonUrls, isFeatureEnabled} from 'app/common/gristUrls';
@@ -21,8 +31,6 @@ import * as roles from 'app/common/roles';
 import {getGristConfig} from 'app/common/urlUtils';
 import {Workspace} from 'app/common/UserAPI';
 import {computed, dom, domComputed, DomElementArg, observable, Observable, styled} from 'grainjs';
-import {createHelpTools, cssLeftPanel, cssScrollPane,
-        cssSectionHeader, cssTools} from 'app/client/ui/LeftPanelCommon';
 
 const t = makeT('HomeLeftPane');
 
@@ -30,16 +38,18 @@ export function createHomeLeftPane(leftPanelOpen: Observable<boolean>, home: Hom
   const creating = observable<boolean>(false);
   const renaming = observable<Workspace|null>(null);
   const isAnonymous = !home.app.currentValidUser;
+  const {enableAnonPlayground, templateOrg, onboardingTutorialDocId} = getGristConfig();
+  const canCreate = !isAnonymous || enableAnonPlayground;
 
   return cssContent(
     dom.autoDispose(creating),
     dom.autoDispose(renaming),
-    addNewButton(leftPanelOpen,
-      menu(() => addMenu(home, creating), {
+    addNewButton({ isOpen: leftPanelOpen, isDisabled: !canCreate },
+      canCreate ? menu(() => addMenu(home, creating), {
         placement: 'bottom-start',
         // "Add New" menu should have the same width as the "Add New" button that opens it.
         stretchToSelector: `.${cssAddNewButton.className}`
-      }),
+      }) : null,
       dom.cls('behavioral-prompt-add-new'),
       testId('dm-add-new'),
     ),
@@ -54,7 +64,7 @@ export function createHomeLeftPane(leftPanelOpen: Observable<boolean>, home: Hom
       ),
       dom.maybe(use => !use(home.singleWorkspace), () =>
         cssSectionHeader(
-          t("Workspaces"),
+          cssSectionHeaderText(t("Workspaces")),
           // Give it a testId, because it's a good element to simulate "click-away" in tests.
           testId('dm-ws-label')
         ),
@@ -87,6 +97,7 @@ export function createHomeLeftPane(leftPanelOpen: Observable<boolean>, home: Hom
               testId('dm-workspace-options'),
             ),
             testId('dm-workspace'),
+            dom.cls('test-dm-workspace-selected', (use) => use(home.currentWSId) === ws.id),
           ),
           cssPageEntry.cls('-renaming', isRenaming),
           dom.maybe(isRenaming, () =>
@@ -109,9 +120,13 @@ export function createHomeLeftPane(leftPanelOpen: Observable<boolean>, home: Hom
           }, testId('dm-ws-name-editor'))
         )
       )),
-      cssTools(
+      cssHomeTools(
+        cssSectionHeader(
+          cssPageColorIcon('GristLogo'),
+          cssSectionHeaderText(t("Grist Resources"))
+        ),
         cssPageEntry(
-          dom.show(isFeatureEnabled("templates") && Boolean(getGristConfig().templateOrg)),
+          dom.show(isFeatureEnabled("templates") && Boolean(templateOrg)),
           cssPageEntry.cls('-selected', (use) => use(home.currentPage) === "templates"),
           cssPageLink(cssPageIcon('Board'), cssLinkText(t("Examples & Templates")),
             urlState().setLinkUrl({homePage: "templates"}),
@@ -125,80 +140,53 @@ export function createHomeLeftPane(leftPanelOpen: Observable<boolean>, home: Hom
             testId('dm-trash'),
           ),
         ),
-        cssSpacer(),
         cssPageEntry(
-          dom.show(isFeatureEnabled('tutorials')),
+          dom.show(isFeatureEnabled('tutorials') && Boolean(templateOrg && onboardingTutorialDocId)),
           cssPageLink(cssPageIcon('Bookmark'), cssLinkText(t("Tutorial")),
-            { href: commonUrls.basicTutorial, target: '_blank' },
+            urlState().setLinkUrl({org: templateOrg!, doc: onboardingTutorialDocId}),
             testId('dm-basic-tutorial'),
           ),
         ),
         createVideoTourToolsButton(),
+        (home.app.isInstallAdmin() ?
+          cssPageEntry(
+            cssPageLink(cssPageIcon('Settings'), cssLinkText(getAdminPanelName()),
+              urlState().setLinkUrl({adminPanel: "admin"}),
+              testId('dm-admin-panel'),
+            ),
+          ) : null
+        ),
         createHelpTools(home.app),
+        (commonUrls.termsOfService ?
+          cssPageEntry(
+            cssPageLink(cssPageIcon('Memo'), cssLinkText(t("Terms of service")),
+              { href: commonUrls.termsOfService, target: '_blank' },
+              testId('dm-tos'),
+            ),
+          ) : null
+        ),
       )
     )
   );
 }
 
-export async function createDocAndOpen(home: HomeModel) {
-  const destWS = home.newDocWorkspace.get();
-  if (!destWS) { return; }
-  try {
-    const docId = await home.createDoc("Untitled document", destWS === "unsaved" ? "unsaved" : destWS.id);
-    // Fetch doc information including urlId.
-    // TODO: consider changing API to return same response as a GET when creating an
-    // object, which is a semi-standard.
-    const doc = await home.app.api.getDoc(docId);
-    await urlState().pushUrl(docUrl(doc));
-  } catch (err) {
-    reportError(err);
-  }
-}
-
-export async function importDocAndOpen(home: HomeModel) {
-  const destWS = home.newDocWorkspace.get();
-  if (!destWS) { return; }
-  const docId = await docImport(home.app, destWS === "unsaved" ? "unsaved" : destWS.id);
-  if (docId) {
-    const doc = await home.app.api.getDoc(docId);
-    await urlState().pushUrl(docUrl(doc));
-  }
-}
-
-export async function importFromPluginAndOpen(home: HomeModel, source: ImportSourceElement) {
-  try {
-    const destWS = home.newDocWorkspace.get();
-    if (!destWS) { return; }
-    const docId = await importFromPlugin(
-      home.app,
-      destWS === "unsaved" ? "unsaved" : destWS.id,
-      source);
-    if (docId) {
-      const doc = await home.app.api.getDoc(docId);
-      await urlState().pushUrl(docUrl(doc));
-    }
-  } catch (err) {
-    reportError(err);
-  }
-}
-
 function addMenu(home: HomeModel, creating: Observable<boolean>): DomElementArg[] {
   const org = home.app.currentOrg;
   const orgAccess: roles.Role|null = org ? org.access : null;
-  const needUpgrade = home.app.currentFeatures.maxWorkspacesPerOrg === 1;
+  const needUpgrade = home.app.currentFeatures?.maxWorkspacesPerOrg === 1;
 
   return [
-    menuItem(() => createDocAndOpen(home), menuIcon('Page'), t("Create Empty Document"),
+    menuItem(() => newDocMethods.createDocAndOpen(home), menuIcon('Page'), t("Create Empty Document"),
       dom.cls('disabled', !home.newDocWorkspace.get()),
       testId("dm-new-doc")
     ),
-    menuItem(() => importDocAndOpen(home), menuIcon('Import'), t("Import Document"),
+    menuItem(() => newDocMethods.importDocAndOpen(home), menuIcon('Import'), t("Import Document"),
       dom.cls('disabled', !home.newDocWorkspace.get()),
       testId("dm-import")
     ),
     domComputed(home.importSources, importSources => ([
       ...importSources.map((source, i) =>
-      menuItem(() => importFromPluginAndOpen(home, source),
+      menuItem(() => newDocMethods.importFromPluginAndOpen(home, source),
         menuIcon('Import'),
         source.importSource.label,
         dom.cls('disabled', !home.newDocWorkspace.get()),
@@ -218,7 +206,23 @@ function addMenu(home: HomeModel, creating: Observable<boolean>): DomElementArg[
 function workspaceMenu(home: HomeModel, ws: Workspace, renaming: Observable<Workspace|null>) {
   function deleteWorkspace() {
     confirmModal(t("Delete {{workspace}} and all included documents?", {workspace: ws.name}), t("Delete"),
-      () => home.deleteWorkspace(ws.id, false),
+      async () => {
+        let all = home.workspaces.get();
+        const index = all.findIndex((w) => w.id === ws.id);
+        const selected = home.currentWSId.get() === ws.id;
+        await home.deleteWorkspace(ws.id, false);
+        // If workspace was not selected, don't do navigation.
+        if (!selected) { return; }
+        all = home.workspaces.get();
+        if (!all.length) {
+          // There was only one workspace, navigate to all docs.
+          await urlState().pushUrl({homePage: 'all'});
+        } else {
+          // Maintain the index.
+          const newIndex = Math.max(0, Math.min(index, all.length - 1));
+          await urlState().pushUrl({ws: all[newIndex].id});
+        }
+      },
       {explanation: t("Workspace will be moved to Trash.")});
   }
 
@@ -234,7 +238,7 @@ function workspaceMenu(home: HomeModel, ws: Workspace, renaming: Observable<Work
     });
   }
 
-  const needUpgrade = home.app.currentFeatures.maxWorkspacesPerOrg === 1;
+  const needUpgrade = home.app.currentFeatures?.maxWorkspacesPerOrg === 1;
 
   return [
     upgradableMenuItem(needUpgrade, () => renaming.set(ws), t("Rename"),

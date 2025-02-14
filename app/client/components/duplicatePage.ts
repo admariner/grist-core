@@ -1,30 +1,32 @@
-import { GristDoc } from 'app/client/components/GristDoc';
-import { ViewFieldRec, ViewSectionRec } from 'app/client/models/DocModel';
-import { cssInput } from 'app/client/ui/cssInput';
-import { cssField, cssLabel } from 'app/client/ui/MakeCopyMenu';
-import { IPageWidget, toPageWidget } from 'app/client/ui/PageWidgetPicker';
-import { confirmModal } from 'app/client/ui2018/modals';
-import { BulkColValues, getColValues, RowRecord, UserAction } from 'app/common/DocActions';
-import { arrayRepeat } from 'app/common/gutil';
-import { schema } from 'app/common/schema';
-import { dom } from 'grainjs';
-import cloneDeepWith = require('lodash/cloneDeepWith');
-import flatten = require('lodash/flatten');
-import forEach = require('lodash/forEach');
-import zip = require('lodash/zip');
-import zipObject = require('lodash/zipObject');
+import {GristDoc} from 'app/client/components/GristDoc';
+import {BoxSpec, purgeBoxSpec} from 'app/client/lib/BoxSpec';
 import {makeT} from 'app/client/lib/localization';
+import {logTelemetryEvent} from 'app/client/lib/telemetry';
+import {ViewFieldRec, ViewSectionRec} from 'app/client/models/DocModel';
+import {cssInput} from 'app/client/ui/cssInput';
+import {cssField, cssLabel} from 'app/client/ui/MakeCopyMenu';
+import {IPageWidget, toPageWidget} from 'app/client/ui/PageWidgetPicker';
+import {confirmModal} from 'app/client/ui2018/modals';
+import {BulkColValues, getColValues, RowRecord, UserAction} from 'app/common/DocActions';
+import {arrayRepeat} from 'app/common/gutil';
+import {schema} from 'app/common/schema';
+import {dom} from 'grainjs';
+import cloneDeepWith from 'lodash/cloneDeepWith';
+import flatten from 'lodash/flatten';
+import forEach from 'lodash/forEach';
+import zip from 'lodash/zip';
+import zipObject from 'lodash/zipObject';
 
 const t = makeT('duplicatePage');
 
 // Duplicate page with pageId. Starts by prompting user for a new name.
-export async function duplicatePage(gristDoc: GristDoc, pageId: number) {
+export async function buildDuplicatePageDialog(gristDoc: GristDoc, pageId: number) {
   const pagesTable = gristDoc.docModel.pages;
   const pageName = pagesTable.rowModels[pageId].view.peek().name.peek();
   let inputEl: HTMLInputElement;
   setTimeout(() => { inputEl.focus(); inputEl.select(); }, 100);
 
-  confirmModal('Duplicate page', 'Save', () => makeDuplicate(gristDoc, pageId, inputEl.value), {
+  confirmModal('Duplicate page', 'Save', () => duplicatePage(gristDoc, pageId, inputEl.value), {
     explanation: dom('div', [
       cssField(
         cssLabel("Name"),
@@ -35,7 +37,10 @@ export async function duplicatePage(gristDoc: GristDoc, pageId: number) {
   });
 }
 
-async function makeDuplicate(gristDoc: GristDoc, pageId: number, pageName: string = '') {
+/**
+ * Duplicates page recreating all sections that are on it.
+ */
+async function duplicatePage(gristDoc: GristDoc, pageId: number, pageName: string = '') {
   const sourceView = gristDoc.docModel.pages.rowModels[pageId].view.peek();
   pageName = pageName || `${sourceView.name.peek()} (copy)`;
   const viewSections = sourceView.viewSections.peek().peek();
@@ -43,6 +48,8 @@ async function makeDuplicate(gristDoc: GristDoc, pageId: number, pageName: strin
   await gristDoc.docData.bundleActions(
     t("Duplicate page {{pageName}}", {pageName}),
     async () => {
+      logTelemetryEvent('addedPage', {full: {docIdDigest: gristDoc.docId()}});
+
       // create new view and new sections
       const results = await createNewViewSections(gristDoc.docData, viewSections);
       viewRef = results[0].viewRef;
@@ -126,6 +133,7 @@ async function updateViewSections(gristDoc: GristDoc, destViewSections: ViewSect
       ...record,
       layoutSpec: JSON.stringify(viewSectionLayoutSpec),
       linkSrcSectionRef: viewSectionMap[srcViewSection.linkSrcSectionRef.peek()],
+      shareOptions: '',
     });
   }
 
@@ -195,13 +203,27 @@ function newViewSectionAction(widget: IPageWidget, viewId: number) {
 /**
  * Replaces each `leaf` id in layoutSpec by its corresponding id in mapIds. Leave unchanged if id is
  * missing from mapIds.
+ * LayoutSpec is a tree structure with leaves (that have `leaf` property) or containers of leaves. The root
+ * container (or leaf) also includes a list of collapsed leaves in `collapsed` property.
+ *
+ * Example use:
+ *   patchLayoutSpec({
+ *     leaf: 1,
+*      collapsed: [{leaf: 2}]
+ *   }, {1: 10, 2: 20})
  */
-export function patchLayoutSpec(layoutSpec: any, mapIds: {[id: number]: number}) {
-  return cloneDeepWith(layoutSpec, (val) => {
-    if (typeof val === 'object') {
-      if (mapIds[val.leaf]) {
-        return {...val, leaf: mapIds[val.leaf]};
-      }
+export function patchLayoutSpec(layoutSpec: BoxSpec, mapIds: {[id: number]: number}) {
+  // First remove any invalid ids from the layoutSpec. We are doing the same thing what
+  // `ViewLayout` does when it load itself.
+  layoutSpec = purgeBoxSpec({
+    spec: layoutSpec,
+    validLeafIds: Object.keys(mapIds).map(Number),
+    restoreCollapsed: true
+  });
+  const cloned = cloneDeepWith(layoutSpec, (val, key) => {
+    if (key === 'leaf' && mapIds[val]) {
+      return mapIds[val];
     }
   });
+  return cloned;
 }

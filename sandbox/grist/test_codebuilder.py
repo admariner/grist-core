@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 import unittest
 
-import codebuilder
 import six
+from asttokens.util import fstring_positions_work
+
+import codebuilder
 import test_engine
 
 unicode_prefix = 'u' if six.PY2 else ''
@@ -71,6 +73,12 @@ class TestCodeBuilder(test_engine.EngineTestCase):
                      "return '''test1\"\"\"\n\"\"\"test2'''")
     self.assertEqual(make_body("'''test1'''\n\"\"\"test2\"\"\""),
                      "'''test1'''\nreturn \"\"\"test2\"\"\"")
+
+    if fstring_positions_work():
+      self.assertEqual(
+        make_body("f'{$foo + 1 + $bar} 2 {3 + $baz}' + $foo2 + f'{4 + $bar2}!'"),
+        "return f'{rec.foo + 1 + rec.bar} 2 {3 + rec.baz}' + rec.foo2 + f'{4 + rec.bar2}!'"
+      )
 
     # Test that we produce valid code when "$foo" occurs in invalid places.
     if six.PY2:

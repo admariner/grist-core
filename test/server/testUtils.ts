@@ -17,6 +17,7 @@ import * as path from 'path';
 import * as fse from 'fs-extra';
 import clone = require('lodash/clone');
 import * as tmp from 'tmp-promise';
+import {Options as TmpOptions} from 'tmp';
 import * as winston from 'winston';
 import { serialize } from 'winston/lib/winston/common';
 
@@ -27,15 +28,15 @@ import { getAppRoot } from 'app/server/lib/places';
 /**
  * Creates a temporary file with the given contents.
  * @param {String} content. Data to store in the file.
- * @param {[Boolean]} optKeep. Optionally pass in true to keep the file from being deleted, which
+ * @param {[Boolean]} options.keep. Optionally pass in true to keep the file from being deleted, which
  *    is useful to see the content while debugging a test.
  * @returns {Promise} A promise for the path of the new file.
  */
-export async function writeTmpFile(content: any, optKeep?: boolean) {
+export async function writeTmpFile(content: any, options: TmpOptions = {}) {
   // discardDescriptor ensures tmp module closes it. It can lead to horrible bugs to close this
   // descriptor yourself, since tmp also closes it on exit, and if it's a different descriptor by
   // that time, it can lead to a crash. See https://github.com/raszi/node-tmp/issues/168
-  const obj = await tmp.file({keep: optKeep, discardDescriptor: true});
+  const obj = await tmp.file({discardDescriptor: true, ...options});
   await fse.writeFile(obj.path, content);
   return obj.path;
 }
@@ -44,17 +45,17 @@ export async function writeTmpFile(content: any, optKeep?: boolean) {
  * Creates a temporary file with `numLines` of generated data, each line about 30 bytes long.
  * This is useful for testing operations with large files.
  * @param {Number} numLines. How many lines to store in the file.
- * @param {[Boolean]} optKeep. Optionally pass in true to keep the file from being deleted, which
+ * @param {[Boolean]} options.keep. Optionally pass in true to keep the file from being deleted, which
  *    is useful to see the content while debugging a test.
  * @returns {Promise} A promise for the path of the new file.
  */
-export async function generateTmpFile(numLines: number, optKeep?: boolean) {
+export async function generateTmpFile(numLines: number, options: TmpOptions = {}) {
   // Generate a bigger data file.
   const data = [];
   for (let i = 0; i < numLines; i++) {
     data.push(i + " abcdefghijklmnopqrstuvwxyz\n");
   }
-  return writeTmpFile(data.join(""), optKeep);
+  return writeTmpFile(data.join(""), options);
 }
 
 
@@ -66,7 +67,7 @@ class CaptureTransport extends winston.Transport {
   private _captureFunc: (level: string, msg: string, meta: any) => void;
 
   public constructor(options: any) {
-    super();
+    super(options);
     this._captureFunc = options.captureFunc;
     if (options.name) {
       this.name = options.name;
@@ -123,23 +124,34 @@ export function setTmpLogLevel(level: string, optCaptureFunc?: (level: string, m
  * captures those at minLevel and higher. Returns a promise for the array of "level: message"
  * strings. These may be tested using testUtils.assertMatchArray(). Callback may return a promise.
  */
-export async function captureLog(minLevel: string, callback: () => void|Promise<void>): Promise<string[]> {
+export async function captureLog(
+  minLevel: string, callback: (messages: string[]) => void|Promise<void>,
+  options: {timestamp?: boolean, waitForFirstLog?: boolean} = {timestamp: false, waitForFirstLog: false}
+): Promise<string[]> {
   const messages: string[] = [];
   const prevLogLevel = log.transports.file.level;
   const name = _.uniqueId('CaptureLog');
 
-  function capture(level: string, msg: string, meta: any) {
-    if ((log as any).levels[level] <= (log as any).levels[minLevel]) {  // winston types are off?
-      messages.push(level + ': ' + msg + (meta ? ' ' + serialize(meta) : ''));
+  const captureFirstLogPromise = new Promise((resolve) => {
+    function capture(level: string, msg: string, meta: any) {
+      if ((log as any).levels[level] <= (log as any).levels[minLevel]) {  // winston types are off?
+        const timePrefix = options.timestamp ? new Date().toISOString() + ' ' : '';
+        messages.push(`${timePrefix}${level}: ${msg}${meta ? ' ' + serialize(meta) : ''}`);
+        resolve(null);
+      }
     }
-  }
 
-  if (!process.env.VERBOSE) {
-    log.transports.file.level = -1 as any;   // Suppress all log output.
-  }
-  log.add(CaptureTransport as any, { captureFunc: capture, name });  // types are off.
+    if (!process.env.VERBOSE) {
+      log.transports.file.level = -1 as any;   // Suppress all log output.
+    }
+    log.add(CaptureTransport as any, { captureFunc: capture, name, level: minLevel});  // types are off.
+  });
+
   try {
-    await callback();
+    await callback(messages);
+    if (options.waitForFirstLog) {
+      await captureFirstLogPromise;
+    }
   } finally {
     log.remove(name);
     log.transports.file.level = prevLogLevel;
@@ -290,11 +302,26 @@ export async function readFixtureDoc(docName: string) {
 // a class to store a snapshot of environment variables, can be reverted to by
 // calling .restore()
 export class EnvironmentSnapshot {
+
+  public static push() {
+    this._stack.push(new EnvironmentSnapshot());
+  }
+
+  public static pop() {
+    const snapshot = this._stack.pop();
+    if (!snapshot) {
+      throw new Error("EnvironmentSnapshot stack is empty");
+    }
+    snapshot.restore();
+  }
+
+  private static _stack: EnvironmentSnapshot[] = [];
+
   private _oldEnv: NodeJS.ProcessEnv;
+
   public constructor() {
     this._oldEnv = clone(process.env);
   }
-
   // Reset environment variables.
   public restore() {
     Object.assign(process.env, this._oldEnv);

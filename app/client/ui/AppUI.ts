@@ -1,7 +1,13 @@
 import {buildDocumentBanners, buildHomeBanners} from 'app/client/components/Banners';
 import {ViewAsBanner} from 'app/client/components/ViewAsBanner';
 import {domAsync} from 'app/client/lib/domAsync';
-import {loadAccountPage, loadActivationPage, loadBillingPage, loadSupportGristPage} from 'app/client/lib/imports';
+import {
+  loadAccountPage,
+  loadActivationPage,
+  loadAdminPanel,
+  loadAuditLogsPage,
+  loadBillingPage,
+} from 'app/client/lib/imports';
 import {createSessionObs, isBoolean, isNumber} from 'app/client/lib/sessionObs';
 import {AppModel, TopAppModel} from 'app/client/models/AppModel';
 import {DocPageModelImpl} from 'app/client/models/DocPageModel';
@@ -13,6 +19,7 @@ import {createDocMenu} from 'app/client/ui/DocMenu';
 import {createForbiddenPage, createNotFoundPage, createOtherErrorPage} from 'app/client/ui/errorPages';
 import {createHomeLeftPane} from 'app/client/ui/HomeLeftPane';
 import {buildSnackbarDom} from 'app/client/ui/NotifyUI';
+import {OnboardingPage, shouldShowOnboardingPage} from 'app/client/ui/OnboardingPage';
 import {pagePanels} from 'app/client/ui/PagePanels';
 import {RightPanel} from 'app/client/ui/RightPanel';
 import {createTopBarDoc, createTopBarHome} from 'app/client/ui/TopBar';
@@ -27,10 +34,12 @@ import {Computed, dom, IDisposable, IDisposableOwner, Observable, replaceContent
 // TODO once #newui is gone, we don't need to worry about this being disposable.
 // appObj is the App object from app/client/ui/App.ts
 export function createAppUI(topAppModel: TopAppModel, appObj: App): IDisposable {
-  const content = dom.maybe(topAppModel.appObs, (appModel) => [
-    createMainPage(appModel, appObj),
-    buildSnackbarDom(appModel.notifier, appModel),
-  ]);
+  const content = dom.maybe(topAppModel.appObs, (appModel) => {
+    return [
+      createMainPage(appModel, appObj),
+      buildSnackbarDom(appModel.notifier, appModel),
+    ];
+  });
   dom.update(document.body, content, {
     // Cancel out bootstrap's overrides.
     style: 'font-family: inherit; font-size: inherit; line-height: inherit;'
@@ -77,10 +86,12 @@ function createMainPage(appModel: AppModel, appObj: App) {
       return dom.create(WelcomePage, appModel);
     } else if (pageType === 'account') {
       return domAsync(loadAccountPage().then(ap => dom.create(ap.AccountPage, appModel)));
-    } else if (pageType === 'support-grist') {
-      return domAsync(loadSupportGristPage().then(sgp => dom.create(sgp.SupportGristPage, appModel)));
+    } else if (pageType === 'admin') {
+      return domAsync(loadAdminPanel().then(m => dom.create(m.AdminPanel, appModel)));
     } else if (pageType === 'activation') {
-      return domAsync(loadActivationPage().then(ap => dom.create(ap.ActivationPage, appModel)));
+      return domAsync(loadActivationPage().then(ap => dom.create(ap.getActivationPage(), appModel)));
+    } else if (pageType === 'audit-logs') {
+      return domAsync(loadAuditLogsPage().then(m => dom.create(m.AuditLogsPage, appModel)));
     } else {
       return dom.create(pagePanelsDoc, appModel, appObj);
     }
@@ -88,6 +99,10 @@ function createMainPage(appModel: AppModel, appObj: App) {
 }
 
 function pagePanelsHome(owner: IDisposableOwner, appModel: AppModel, app: App) {
+  if (shouldShowOnboardingPage(appModel.userPrefsObs)) {
+    return dom.create(OnboardingPage, appModel);
+  }
+
   const pageModel = HomeModelImpl.create(owner, appModel, app.clientScope);
   const leftPanelOpen = Observable.create(owner, true);
 

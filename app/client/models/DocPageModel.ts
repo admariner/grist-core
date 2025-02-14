@@ -1,5 +1,6 @@
 import {GristDoc} from 'app/client/components/GristDoc';
 import {IUndoState} from 'app/client/components/UndoStack';
+import {UnsavedChange} from 'app/client/components/UnsavedChanges';
 import {loadGristDoc} from 'app/client/lib/imports';
 import {AppModel, getOrgNameOrGuest, reportError} from 'app/client/models/AppModel';
 import {getDoc} from 'app/client/models/gristConfigCache';
@@ -16,16 +17,27 @@ import {menu, menuDivider, menuIcon, menuItem, menuText} from 'app/client/ui2018
 import {confirmModal} from 'app/client/ui2018/modals';
 import {AsyncFlow, CancelledError, FlowRunner} from 'app/common/AsyncFlow';
 import {delay} from 'app/common/delay';
-import {OpenDocMode, UserOverride} from 'app/common/DocListAPI';
+import {OpenDocMode, OpenDocOptions, UserOverride} from 'app/common/DocListAPI';
 import {FilteredDocUsageSummary} from 'app/common/DocUsage';
-import {Product} from 'app/common/Features';
+import {Features, mergedFeatures, Product} from 'app/common/Features';
 import {buildUrlId, IGristUrlState, parseUrlId, UrlIdParts} from 'app/common/gristUrls';
 import {getReconnectTimeout} from 'app/common/gutil';
 import {canEdit, isOwner} from 'app/common/roles';
-import {Document, NEW_DOCUMENT_CODE, Organization, UserAPI, Workspace} from 'app/common/UserAPI';
+import {UserInfo} from 'app/common/User';
+import {
+  DOCTYPE_TEMPLATE,
+  DOCTYPE_TUTORIAL,
+  Document,
+  DocumentType,
+  NEW_DOCUMENT_CODE,
+  Organization,
+  UserAPI,
+  Workspace
+} from 'app/common/UserAPI';
 import {Holder, Observable, subscribe} from 'grainjs';
 import {Computed, Disposable, dom, DomArg, DomElementArg} from 'grainjs';
 import {makeT} from 'app/client/lib/localization';
+import {logTelemetryEvent} from 'app/client/lib/telemetry';
 
 // tslint:disable:no-console
 
@@ -36,6 +48,7 @@ export interface DocInfo extends Document {
   isPreFork: boolean;
   isFork: boolean;
   isRecoveryMode: boolean;
+  user: UserInfo|null;
   userOverride: UserOverride|null;
   isBareFork: boolean;  // a document created without logging in, which is treated as a
                         // fork without an original.
@@ -59,6 +72,10 @@ export interface DocPageModel {
    * changes, or a doc usage message is received from the server.
    */
   currentProduct: Observable<Product|null>;
+  /**
+   * Current features of the product
+   */
+  currentFeatures: Observable<Features|null>;
 
   // This block is to satisfy previous interface, but usable as this.currentDoc.get().id, etc.
   currentDocId: Observable<string|undefined>;
@@ -72,13 +89,14 @@ export interface DocPageModel {
   isPrefork: Observable<boolean>;
   isFork: Observable<boolean>;
   isRecoveryMode: Observable<boolean>;
+  user: Observable<UserInfo|null>;
   userOverride: Observable<UserOverride|null>;
   isBareFork: Observable<boolean>;
   isSnapshot: Observable<boolean>;
   isTutorialTrunk: Observable<boolean>;
   isTutorialFork: Observable<boolean>;
   isTemplate: Observable<boolean>;
-
+  type: Observable<DocumentType>;
   importSources: ImportSource[];
 
   undoState: Observable<IUndoState|null>;          // See UndoStack for details.
@@ -94,6 +112,7 @@ export interface DocPageModel {
   // the error that prompted the offer. If user is not owner, just flag that
   // document needs attention of an owner.
   offerRecovery(err: Error): void;
+  clearUnsavedChanges(): void;
 }
 
 export interface ImportSource {
@@ -113,6 +132,7 @@ export class DocPageModelImpl extends Disposable implements DocPageModel {
    * changes, or a doc usage message is received from the server.
    */
   public readonly currentProduct = Observable.create<Product|null>(this, null);
+  public readonly currentFeatures: Computed<Features|null>;
 
   public readonly currentUrlId = Computed.create(this, this.currentDoc, (use, doc) => doc ? doc.urlId : undefined);
   public readonly currentDocId = Computed.create(this, this.currentDoc, (use, doc) => doc ? doc.id : undefined);
@@ -126,6 +146,7 @@ export class DocPageModelImpl extends Disposable implements DocPageModel {
   public readonly isFork = Computed.create(this, this.currentDoc, (use, doc) => doc ? doc.isFork : false);
   public readonly isRecoveryMode = Computed.create(this, this.currentDoc,
                                                    (use, doc) => doc ? doc.isRecoveryMode : false);
+  public readonly user = Computed.create(this, this.currentDoc, (use, doc) => doc ? doc.user : null);
   public readonly userOverride = Computed.create(this, this.currentDoc, (use, doc) => doc ? doc.userOverride : null);
   public readonly isBareFork = Computed.create(this, this.currentDoc, (use, doc) => doc ? doc.isBareFork : false);
   public readonly isSnapshot = Computed.create(this, this.currentDoc, (use, doc) => doc ? doc.isSnapshot : false);
@@ -135,6 +156,8 @@ export class DocPageModelImpl extends Disposable implements DocPageModel {
     (use, doc) => doc ? doc.isTutorialFork : false);
   public readonly isTemplate = Computed.create(this, this.currentDoc,
     (use, doc) => doc ? doc.isTemplate : false);
+  public readonly type = Computed.create(this, this.currentDoc,
+    (use, doc) => doc?.type ?? null);
 
   public readonly importSources: ImportSource[] = [];
 
@@ -154,8 +177,25 @@ export class DocPageModelImpl extends Disposable implements DocPageModel {
   // (with the previous promise cancelled) when _openerDocKey changes.
   private _openerHolder = Holder.create<FlowRunner>(this);
 
+  private readonly _unsavedChangeHolder = Holder.create<UnsavedChange>(this);
+
+  private readonly _isUnsavedFork = Computed.create(this,
+    this.isFork,
+    this.isSnapshot,
+    this.isTutorialFork,
+    (use, isFork, isSnapshot, isTutorialFork) => isFork && !isSnapshot && !isTutorialFork
+  );
+
   constructor(private _appObj: App, public readonly appModel: AppModel, private _api: UserAPI = appModel.api) {
     super();
+
+    this.currentFeatures = Computed.create(this, use => {
+      const product = use(this.currentProduct);
+      if (!product) { return null; }
+      const ba = use(this.currentOrg)?.billingAccount?.features ?? {};
+      const merged = mergedFeatures(product.features, ba);
+      return merged;
+    });
 
     this.autoDispose(subscribe(urlState().state, (use, state) => {
       const urlId = state.doc;
@@ -170,8 +210,13 @@ export class DocPageModelImpl extends Disposable implements DocPageModel {
         if (!urlId) {
           this._openerHolder.clear();
         } else {
-          FlowRunner.create(this._openerHolder,
-            (flow: AsyncFlow) => this._openDoc(flow, urlId, urlOpenMode, state.params?.compare, linkParameters)
+          FlowRunner.create(
+            this._openerHolder,
+            (flow: AsyncFlow) => this.appModel.notifier.slowNotification(this._openDoc(flow, urlId, {
+              openMode: urlOpenMode,
+              linkParameters,
+              originalUrlId: state.doc,
+            }, state.params?.compare))
           )
           .resultPromise.catch(err => this._onOpenError(err));
         }
@@ -185,12 +230,20 @@ export class DocPageModelImpl extends Disposable implements DocPageModel {
         this.currentProduct.set(org?.billingAccount?.product ?? null);
       }
     }));
+
+    this.autoDispose(this._isUnsavedFork.addListener((isUnsavedFork) => {
+      if (isUnsavedFork) {
+        UnsavedChange.create(this._unsavedChangeHolder);
+      } else {
+        this._unsavedChangeHolder.clear();
+      }
+    }));
   }
 
   public createLeftPane(leftPanelOpen: Observable<boolean>) {
     return cssLeftPanel(
       dom.maybe(this.gristDoc, (activeDoc) => [
-        addNewButton(leftPanelOpen,
+        addNewButton({ isOpen: leftPanelOpen },
           menu(() => addMenu(this.importSources, activeDoc, this.isReadonly.get()), {
             placement: 'bottom-start',
             // "Add New" menu should have the same width as the "Add New" button that opens it.
@@ -227,8 +280,9 @@ export class DocPageModelImpl extends Disposable implements DocPageModel {
     // TODO It would be bad if a new doc gets opened while this getDoc() is pending...
     const newDoc = await getDoc(this._api, urlId);
     const isRecoveryMode = Boolean(this.currentDoc.get()?.isRecoveryMode);
+    const user = this.currentDoc.get()?.user || null;
     const userOverride = this.currentDoc.get()?.userOverride || null;
-    this.currentDoc.set({...buildDocInfo(newDoc, openMode), isRecoveryMode, userOverride});
+    this.currentDoc.set({...buildDocInfo(newDoc, openMode), isRecoveryMode, user, userOverride});
     return newDoc;
   }
 
@@ -274,7 +328,8 @@ Recovery mode opens the document to be fully accessible to owners, and inaccessi
 It also disables formulas. [{{error}}]", {error: err.message})
             : isDenied
               ? t('Sorry, access to this document has been denied. [{{error}}]', {error: err.message})
-              : t("Document owners can attempt to recover the document. [{{error}}]", {error: err.message})
+              : t("Please reload the document and if the error persist, "+
+                "contact the document owners to attempt a document recovery. [{{error}}]", {error: err.message})
         ),
         hideCancel: true,
         extraButtons: !(isDocOwner && !isDenied) ? null : bigBasicButton(
@@ -289,6 +344,10 @@ It also disables formulas. [{{error}}]", {error: err.message})
     );
   }
 
+  public clearUnsavedChanges(): void {
+    this._unsavedChangeHolder.clear();
+  }
+
   private _onOpenError(err: Error) {
     if (err instanceof CancelledError) {
       // This means that we started loading a new doc before the previous one finished loading.
@@ -301,9 +360,9 @@ It also disables formulas. [{{error}}]", {error: err.message})
     this.offerRecovery(err);
   }
 
-  private async _openDoc(flow: AsyncFlow, urlId: string, urlOpenMode: OpenDocMode | undefined,
-                         comparisonUrlId: string | undefined,
-                         linkParameters: Record<string, string> | undefined): Promise<void> {
+  private async _openDoc(flow: AsyncFlow, urlId: string, options: OpenDocOptions,
+                         comparisonUrlId: string | undefined): Promise<void> {
+    const {openMode: urlOpenMode, linkParameters} = options;
     console.log(`DocPageModel _openDoc starting for ${urlId} (mode ${urlOpenMode})` +
                 (comparisonUrlId ? ` (compare ${comparisonUrlId})` : ''));
     const gristDocModulePromise = loadGristDoc();
@@ -342,6 +401,14 @@ It also disables formulas. [{{error}}]", {error: err.message})
         await this.updateUrlNoReload(doc.urlId, doc.openMode);
       }
 
+      if (doc.isTemplate) {
+        logTelemetryEvent('openedTemplate', {
+          full: {
+            templateId: parseUrlId(doc.urlId || doc.id).trunkId,
+          },
+        });
+      }
+
       this.currentDoc.set(doc);
     }
 
@@ -351,12 +418,18 @@ It also disables formulas. [{{error}}]", {error: err.message})
     comm.useDocConnection(doc.id);
     flow.onDispose(() => comm.releaseDocConnection(doc.id));
 
-    const openDocResponse = await comm.openDoc(doc.id, doc.openMode, linkParameters);
-    if (openDocResponse.recoveryMode || openDocResponse.userOverride) {
-      doc.isRecoveryMode = Boolean(openDocResponse.recoveryMode);
-      doc.userOverride = openDocResponse.userOverride || null;
-      this.currentDoc.set({...doc});
+    const openDocResponse = await comm.openDoc(doc.id, {
+      openMode: doc.openMode,
+      linkParameters,
+      originalUrlId: options.originalUrlId,
+    });
+    const {user, recoveryMode, userOverride} = openDocResponse;
+    doc.user = user;
+    if (recoveryMode || userOverride) {
+      doc.isRecoveryMode = Boolean(recoveryMode);
+      doc.userOverride = userOverride || null;
     }
+    this.currentDoc.set({...doc});
     if (openDocResponse.docUsage) {
       this.updateCurrentDocUsage(openDocResponse.docUsage);
     }
@@ -437,7 +510,8 @@ function buildDocInfo(doc: Document, mode: OpenDocMode | undefined): DocInfo {
   const isFork = Boolean(idParts.forkId || idParts.snapshotId);
   const isBareFork = isFork && idParts.trunkId === NEW_DOCUMENT_CODE;
   const isSnapshot = Boolean(idParts.snapshotId);
-  const isTutorial = doc.type === 'tutorial';
+  const type = doc.type;
+  const isTutorial = type === DOCTYPE_TUTORIAL;
   const isTutorialTrunk = isTutorial && !isFork && mode !== 'default';
   const isTutorialFork = isTutorial && isFork;
 
@@ -449,7 +523,7 @@ function buildDocInfo(doc: Document, mode: OpenDocMode | undefined): DocInfo {
       // mode. Since the document's 'openMode' has no effect, don't bother trying
       // to set it here, as it'll potentially be confusing for other code reading it.
       openMode = 'default';
-    } else if (!isFork && doc.type === 'template') {
+    } else if (!isFork && type === DOCTYPE_TEMPLATE) {
       // Templates should always open in fork mode by default.
       openMode = 'fork';
     } else {
@@ -459,19 +533,20 @@ function buildDocInfo(doc: Document, mode: OpenDocMode | undefined): DocInfo {
   }
 
   const isPreFork = openMode === 'fork';
-  const isTemplate = doc.type === 'template' && (isFork || isPreFork);
+  const isTemplate = type === DOCTYPE_TEMPLATE && (isFork || isPreFork);
   const isEditable = !isSnapshot && (canEdit(doc.access) || isPreFork);
-
   return {
     ...doc,
     isFork,
     isRecoveryMode: false,  // we don't know yet, will learn when doc is opened.
+    user: null,             // ditto.
     userOverride: null,     // ditto.
     isPreFork,
     isBareFork,
     isSnapshot,
     isTutorialTrunk,
     isTutorialFork,
+    type,
     isTemplate,
     isReadonly: !isEditable,
     idParts,

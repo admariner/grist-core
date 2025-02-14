@@ -6,8 +6,9 @@
  * It can be instantiated by calling showUserManagerModal with the UserAPI and IUserManagerOptions.
  */
 import { makeT } from 'app/client/lib/localization';
-import {commonUrls} from 'app/common/gristUrls';
+import {commonUrls, isOrgInPathOnly} from 'app/common/gristUrls';
 import {capitalizeFirstWord, isLongerThan} from 'app/common/gutil';
+import {getGristConfig} from 'app/common/urlUtils';
 import {FullUser} from 'app/common/LoginSessionAPI';
 import * as roles from 'app/common/roles';
 import {Organization, PermissionData, UserAPI} from 'app/common/UserAPI';
@@ -27,7 +28,6 @@ import {IEditableMember, IMemberSelectOption, IOrgMemberSelectOption,
         Resource} from 'app/client/models/UserManagerModel';
 import {UserManagerModel, UserManagerModelImpl} from 'app/client/models/UserManagerModel';
 import {getResourceParent, ResourceType} from 'app/client/models/UserManagerModel';
-import {GristTooltips} from 'app/client/ui/GristTooltips';
 import {shadowScroll} from 'app/client/ui/shadowScroll';
 import {hoverTooltip, ITooltipControl, showTransientTooltip, withInfoTooltip} from 'app/client/ui/tooltips';
 import {createUserImage} from 'app/client/ui/UserImage';
@@ -187,7 +187,7 @@ function buildUserManagerModal(
                   }),
                   testId('um-open-access-rules'),
                 ),
-                GristTooltips.openAccessRules(),
+                'openAccessRules',
                 {domArgs: [cssAccessLink.cls('')]},
             )
             : null
@@ -284,7 +284,7 @@ export class UserManager extends Disposable {
         // TODO: Consider adding a tooltip explaining inheritance. A brief text caption may
         // be used to fill whitespace in org UserManager.
         this._model.isOrg ? null : dom('span', { style: `float: left;` },
-          dom('span', 'Inherit access: '),
+          dom('span', t('Inherit access: ')),
           this._inheritRoleSelector()
         ),
         publicMember ? dom('span', { style: `float: right;` },
@@ -817,15 +817,25 @@ const cssMemberPublicAccess = styled(cssMemberSecondary, `
 function renderTitle(resourceType: ResourceType, resource?: Resource, personal?: boolean) {
   switch (resourceType) {
     case 'organization': {
-      if (personal) { return t('Your role for this team site'); }
-      return [
-        t('Manage members of team site'),
-        !resource ? null : cssOrgName(
-          `${(resource as Organization).name} (`,
-          cssOrgDomain(`${(resource as Organization).domain}.getgrist.com`),
-          ')',
-        )
-      ];
+      if (personal) {
+        return t('Your role for this team site');
+      }
+
+      function getOrgDisplay() {
+        if (!resource) {
+          return null;
+        }
+
+        const org = resource as Organization;
+        const gristConfig = getGristConfig();
+        const gristHomeHost = gristConfig.homeUrl ? new URL(gristConfig.homeUrl).host : '';
+        const baseDomain = gristConfig.baseDomain || gristHomeHost;
+        const orgDisplay = isOrgInPathOnly() ? `${baseDomain}/o/${org.domain}` : `${org.domain}${baseDomain}`;
+
+        return cssOrgName(`${org.name} (`, cssOrgDomain(orgDisplay), ')');
+      }
+
+      return [t('Manage members of team site'), getOrgDisplay()];
     }
     default: {
       return personal ?

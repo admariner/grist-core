@@ -2,7 +2,6 @@ declare module "app/client/components/AceEditor";
 declare module "app/client/components/Clipboard";
 declare module "app/client/components/CodeEditorPanel";
 declare module "app/client/components/DetailView";
-declare module "app/client/components/DocConfigTab";
 declare module "app/client/components/GridView";
 declare module "app/client/lib/Mousetrap";
 declare module "app/client/lib/browserGlobals";
@@ -25,7 +24,7 @@ declare module "app/client/components/Base" {
 
 declare module "app/client/components/BaseView" {
 
-  import {Cursor, CursorPos} from 'app/client/components/Cursor';
+  import {Cursor} from 'app/client/components/Cursor';
   import {GristDoc} from 'app/client/components/GristDoc';
   import {IGristUrlState} from 'app/common/gristUrls';
   import {SelectionSummary} from 'app/client/components/SelectionSummary';
@@ -39,6 +38,7 @@ declare module "app/client/components/BaseView" {
   import {SortedRowSet} from 'app/client/models/rowset';
   import {IColumnFilterMenuOptions} from 'app/client/ui/ColumnFilterMenu';
   import {FieldBuilder} from "app/client/widgets/FieldBuilder";
+  import {CursorPos} from 'app/plugin/GristAPI';
   import {DomArg} from 'grainjs';
   import {IOpenController} from 'popweasel';
 
@@ -62,6 +62,7 @@ declare module "app/client/components/BaseView" {
     public isTruncated: ko.Observable<boolean>;
     public tableModel: DataTableModel;
     public selectionSummary?: SelectionSummary;
+    public currentEditingColumnIndex: ko.Observable<number>;
 
     constructor(gristDoc: GristDoc, viewSectionModel: any, options?: {addNewRow?: boolean, isPreview?: boolean});
     public setCursorPos(cursorPos: CursorPos): void;
@@ -76,8 +77,39 @@ declare module "app/client/components/BaseView" {
     public moveEditRowToCursor(): DataRowModel;
     public scrollToCursor(sync: boolean): Promise<void>;
     public getAnchorLinkForSection(sectionId: number): IGristUrlState;
+    public viewSelectedRecordAsCard(): void;
+    public isRecordCardDisabled(): boolean;
   }
   export = BaseView;
+}
+
+declare module 'app/client/components/GridView' {
+  import BaseView from 'app/client/components/BaseView';
+  import {GristDoc} from 'app/client/components/GristDoc';
+  import {ColInfo, NewColInfo} from 'app/client/models/entities/ViewSectionRec';
+
+  interface InsertColOptions {
+    colInfo?: ColInfo;
+    index?: number;
+    skipPopup?: boolean;
+    onPopupClose?: () => void;
+  }
+
+  namespace GridView {}
+
+  class GridView extends BaseView {
+    public static create(...args: any[]): any;
+
+    public gristDoc: GristDoc;
+
+    constructor(gristDoc: GristDoc, viewSectionModel: any, isPreview?: boolean);
+    public insertColumn(
+      colId?: string|null,
+      options?: InsertColOptions,
+    ): Promise<NewColInfo>;
+    public showColumn(colRef: number, index?: number): Promise<void>;
+  }
+  export = GridView;
 }
 
 declare module "app/client/components/ViewConfigTab" {
@@ -301,4 +333,8 @@ interface Location {
   // We use reload(true) in places, which has an effect in Firefox, but may be more of a
   // historical accident than an intentional choice.
   reload(forceGet?: boolean): void;
+}
+
+interface JQuery {
+  datepicker(options: unknown): JQuery;
 }

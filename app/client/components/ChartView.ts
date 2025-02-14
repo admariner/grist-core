@@ -17,6 +17,7 @@ import {cssFieldEntry, cssFieldLabel, IField, VisibleFieldsConfig } from 'app/cl
 import {IconName} from 'app/client/ui2018/IconList';
 import {squareCheckbox} from 'app/client/ui2018/checkbox';
 import {theme, vars} from 'app/client/ui2018/cssVars';
+import {gristThemeObs} from 'app/client/ui2018/theme';
 import {cssDragger} from 'app/client/ui2018/draggableList';
 import {icon} from 'app/client/ui2018/icons';
 import {IOptionFull, linkSelect, menu, menuItem, menuText, select} from 'app/client/ui2018/menus';
@@ -77,6 +78,9 @@ export function isNumericLike(col: ColumnRec, use: UseCB = unwrap) {
   return ['Numeric', 'Int', 'Any'].includes(colType);
 }
 
+function isCategoryType(pureType: string): boolean {
+  return !['Numeric', 'Int', 'Any', 'Date', 'DateTime'].includes(pureType);
+}
 
 interface ChartOptions {
   multiseries?: boolean;
@@ -105,8 +109,9 @@ type RowPropGetter = (rowId: number) => Datum;
 // We convert Grist data to a list of Series first, from which we then construct Plotly traces.
 interface Series {
   label: string;          // Corresponds to the column name.
-  group?: Datum;          // The group value, when grouped.
   values: Datum[];
+  pureType?: string;      // The pure type of the column.
+  group?: Datum;          // The group value, when grouped.
   isInSortSpec?: boolean; // Whether this series is present in sort spec for this chart.
 }
 
@@ -229,7 +234,7 @@ export class ChartView extends Disposable {
     this.listenTo(this.sortedRows, 'rowNotify', this._update);
     this.autoDispose(this.sortedRows.getKoArray().subscribe(this._update));
     this.autoDispose(this._formatterComp.subscribe(this._update));
-    this.autoDispose(this.gristDoc.currentTheme.addListener(() => this._update()));
+    this.autoDispose(gristThemeObs().addListener(() => this._update()));
   }
 
   public prepareToPrint(onOff: boolean) {
@@ -272,6 +277,7 @@ export class ChartView extends Disposable {
         const pureType = field.displayColModel().pureType();
         const fullGetter = (pureType === 'Date' || pureType === 'DateTime') ? dateGetter(getter) : getter;
         return {
+          pureType,
           label: field.label(),
           values: rowIds.map(fullGetter),
           isInSortSpec: Boolean(Sort.findCol(this._sortSpec, field.colRef.peek())),
@@ -387,8 +393,7 @@ export class ChartView extends Disposable {
   }
 
   private _getPlotlyTheme(): Partial<Layout> {
-    const appModel = this.gristDoc.docPageModel.appModel;
-    const {colors} = appModel.currentTheme.get();
+    const {colors} = gristThemeObs().get();
     return {
       paper_bgcolor: colors['chart-bg'],
       plot_bgcolor: colors['chart-bg'],
@@ -1121,7 +1126,15 @@ function basicPlot(series: Series[], options: ChartOptions, dataOptions: Data): 
 export const chartTypes: {[name: string]: ChartFunc} = {
   // TODO There is a lot of code duplication across chart types. Some refactoring is in order.
   bar(series: Series[], options: ChartOptions): PlotData {
-    return basicPlot(series, options, {type: 'bar'});
+    // If the X axis is not from numerical column, treat it as category.
+    const data = basicPlot(series, options, {type: 'bar'});
+    const useCategory = series[0]?.pureType && isCategoryType(series[0].pureType);
+    const xaxisName = options.orientation === 'h' ? 'yaxis' : 'xaxis';
+    if (useCategory && data.layout && data.layout[xaxisName]) {
+      const axisConfig = data.layout[xaxisName]!;
+      axisConfig.type = 'category';
+    }
+    return data;
   },
   line(series: Series[], options: ChartOptions): PlotData {
     sortByXValues(series);

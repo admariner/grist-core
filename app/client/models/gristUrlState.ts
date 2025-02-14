@@ -47,16 +47,12 @@ let _urlState: UrlState<IGristUrlState>|undefined;
  * In addition to setting `doc` and `slug`, it sets additional parameters
  * from `params` if any are supplied.
  */
-export function docUrl(doc: Document, params: {org?: string} = {}): IGristUrlState {
+export function docUrl(doc: Document): IGristUrlState {
   const state: IGristUrlState = {
     doc: doc.urlId || doc.id,
     slug: getSlugIfNeeded(doc),
   };
 
-  // TODO: Get non-sample documents with `org` set to fully work (a few tests fail).
-  if (params.org) {
-    state.org = params.org;
-  }
   return state;
 }
 
@@ -66,43 +62,61 @@ export function getMainOrgUrl(): string { return urlState().makeUrl({}); }
 // When on a document URL, returns the URL with just the doc ID, omitting other bits (like page).
 export function getCurrentDocUrl(): string { return urlState().makeUrl({docPage: undefined}); }
 
-// Get url for the login page, which will then redirect to `nextUrl` (current page by default).
-export function getLoginUrl(nextUrl: string | null = _getCurrentUrl()): string {
-  return _getLoginLogoutUrl('login', nextUrl);
+export interface GetLoginOrSignupUrlOptions {
+  srcDocId?: string | null;
+  /** Defaults to the current URL. */
+  nextUrl?: string | null;
 }
 
-// Get url for the signup page, which will then redirect to `nextUrl` (current page by default).
-export function getSignupUrl(nextUrl: string = _getCurrentUrl()): string {
-  return _getLoginLogoutUrl('signup', nextUrl);
+// Get URL for the login page.
+export function getLoginUrl(options: GetLoginOrSignupUrlOptions = {}): string {
+  return _getLoginLogoutUrl('login', options);
 }
 
-// Get url for the logout page.
+// Get URL for the signup page.
+export function getSignupUrl(options: GetLoginOrSignupUrlOptions = {}): string {
+  return _getLoginLogoutUrl('signup', options);
+}
+
+// Get URL for the logout page.
 export function getLogoutUrl(): string {
   return _getLoginLogoutUrl('logout');
 }
 
-// Get url for the signin page, which will then redirect to `nextUrl` (current page by default).
-export function getLoginOrSignupUrl(nextUrl: string = _getCurrentUrl()): string {
-  return _getLoginLogoutUrl('signin', nextUrl);
+// Get the URL that users are redirect to after deleting their account.
+export function getAccountDeletedUrl(): string {
+  return _getLoginLogoutUrl('account-deleted', {nextUrl: ''});
+}
+
+// Get URL for the signin page.
+export function getLoginOrSignupUrl(options: GetLoginOrSignupUrlOptions = {}): string {
+  return _getLoginLogoutUrl('signin', options);
 }
 
 export function getWelcomeHomeUrl() {
   return _buildUrl('welcome/home').href;
 }
 
+const FINAL_PATHS = ['/signed-out', '/account-deleted'];
+
 // Returns the relative URL (i.e. path) of the current page, except when it's the
-// "/signed-out" page, in which case it returns the home page ("/").
+// "/signed-out" page or "/account-deleted", in which case it returns the home page ("/").
 // This is a good URL to use for a post-login redirect.
 function _getCurrentUrl(): string {
   const {hash, pathname, search} = new URL(window.location.href);
-  if (pathname.endsWith('/signed-out')) { return '/'; }
+  if (FINAL_PATHS.some(final => pathname.endsWith(final))) { return '/'; }
 
   return parseFirstUrlPart('o', pathname).path + search + hash;
 }
 
-// Returns the URL for the given login page, with 'next' param optionally set.
-function _getLoginLogoutUrl(page: 'login'|'logout'|'signin'|'signup', nextUrl?: string | null): string {
+// Returns the URL for the given login page.
+function _getLoginLogoutUrl(
+  page: 'login'|'logout'|'signin'|'signup'|'account-deleted',
+  options: GetLoginOrSignupUrlOptions = {}
+): string {
+  const {srcDocId, nextUrl = _getCurrentUrl()} = options;
   const startUrl = _buildUrl(page);
+  if (srcDocId) { startUrl.searchParams.set('srcDocId', srcDocId); }
   if (nextUrl) { startUrl.searchParams.set('next', nextUrl); }
   return startUrl.href;
 }
@@ -155,11 +169,22 @@ export class UrlStateImpl {
    * E.g. setting 'docPage' will reuse previous 'doc', but setting 'org' or 'ws' will ignore it.
    */
   public updateState(prevState: IGristUrlState, newState: IGristUrlState): IGristUrlState {
-    const keepState = (newState.org || newState.ws || newState.homePage || newState.doc || isEmpty(newState) ||
-                       newState.account || newState.billing  || newState.activation || newState.welcome ||
-                       newState.supportGrist) ?
-      (prevState.org ? {org: prevState.org} : {}) :
-      prevState;
+    const keepState =
+      newState.org ||
+      newState.ws ||
+      newState.homePage ||
+      newState.doc ||
+      isEmpty(newState) ||
+      newState.account ||
+      newState.billing ||
+      newState.activation ||
+      newState.auditLogs ||
+      newState.welcome ||
+      newState.adminPanel
+        ? prevState.org
+          ? { org: prevState.org }
+          : {}
+        : prevState;
     return {...keepState, ...newState};
   }
 
@@ -170,6 +195,9 @@ export class UrlStateImpl {
    * a matter of DocWorker requiring a different version (e.g. /v/OTHER/doc/...).
    */
   public needPageLoad(prevState: IGristUrlState, newState: IGristUrlState): boolean {
+    // If we have an API URL we can't use it to switch the state, so we need a page load.
+    if (newState.api || prevState.api) { return true; }
+
     const gristConfig = this._window.gristConfig || {};
     const orgReload = prevState.org !== newState.org;
     // Reload when moving to/from a document or between doc and non-doc.
@@ -180,6 +208,8 @@ export class UrlStateImpl {
     const billingReload = Boolean(prevState.billing) !== Boolean(newState.billing);
     // Reload when moving to/from an activation page.
     const activationReload = Boolean(prevState.activation) !== Boolean(newState.activation);
+    // Reload when moving to/from the audit logs page.
+    const auditLogsReload = Boolean(prevState.auditLogs) !== Boolean(newState.auditLogs);
     // Reload when moving to/from a welcome page.
     const welcomeReload = Boolean(prevState.welcome) !== Boolean(newState.welcome);
     // Reload when link keys change, which changes what the user can access
@@ -188,10 +218,20 @@ export class UrlStateImpl {
     const signupReload = [prevState.login, newState.login].includes('signup')
       && prevState.login !== newState.login;
     // Reload when moving to/from the support Grist page.
-    const supportGristReload = Boolean(prevState.supportGrist) !== Boolean(newState.supportGrist);
-    return Boolean(orgReload || accountReload || billingReload || activationReload ||
-      gristConfig.errPage || docReload || welcomeReload || linkKeysReload || signupReload ||
-      supportGristReload);
+    const adminPanelReload = Boolean(prevState.adminPanel) !== Boolean(newState.adminPanel);
+    return Boolean(
+      orgReload ||
+        accountReload ||
+        billingReload ||
+        activationReload ||
+        auditLogsReload ||
+        gristConfig.errPage ||
+        docReload ||
+        welcomeReload ||
+        linkKeysReload ||
+        signupReload ||
+        adminPanelReload
+    );
   }
 
   /**
@@ -207,7 +247,7 @@ export class UrlStateImpl {
 
 /**
  * Given value like `foo bar baz`, constructs URL by checking if `baz` is a valid URL and,
- * if not, prepending `http://`.
+ * if not, prepending `https://`.
  */
 export function constructUrl(value: CellValue): string {
   if (typeof value !== 'string') {
@@ -218,8 +258,8 @@ export function constructUrl(value: CellValue): string {
     // Try to construct a valid URL
     return (new URL(url)).toString();
   } catch (e) {
-    // Not a valid URL, so try to prefix it with http
-    return 'http://' + url;
+    // Not a valid URL, so try to prefix it with https
+    return 'https://' + url;
   }
 }
 

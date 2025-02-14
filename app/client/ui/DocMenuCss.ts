@@ -8,23 +8,17 @@ import {bigBasicButton} from 'app/client/ui2018/buttons';
 // styles, which gives it priority.
 import 'popweasel';
 
-// The "&:after" clause forces some padding below all docs.
 export const docList = styled('div', `
   height: 100%;
-  padding: 32px 64px 24px 64px;
+  padding: 0px 40px 64px 40px;
   overflow-y: auto;
   position: relative;
   display: flex;
   flex-direction: column;
 
-  &:after {
-    content: "";
-    display: block;
-    height: 64px;
-  }
   @media ${mediaSmall} {
     & {
-      padding: 32px 24px 24px 24px;
+      padding: 0px 24px 64px 24px;
     }
   }
   @media print {
@@ -36,14 +30,27 @@ export const docList = styled('div', `
 
 export const docListContent = styled('div', `
   display: flex;
+  width: 100%;
+  max-width: 1340px;
+  margin: 0 auto;
 `);
 
 export const docMenu = styled('div', `
-  flex-grow: 1;
-  max-width: 100%;
+  width: 100%;
 `);
 
-const listHeader = styled('div', `
+const headerWrap = styled('div', `
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+`);
+
+export const docListHeaderWrap = styled(headerWrap, `
+  margin: 16px 0px 24px 0px;
+`);
+
+export const listHeader = styled('div', `
   min-height: 32px;
   line-height: 32px;
   color: ${theme.text};
@@ -51,8 +58,24 @@ const listHeader = styled('div', `
   font-weight: ${vars.headerControlTextWeight};
 `);
 
+export const listHeaderNoWrap = styled(listHeader, `
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`);
+
 export const docListHeader = styled(listHeader, `
   margin-bottom: 24px;
+`);
+
+export const workspaceHeaderWrap = styled('div', `
+  display: flex;
+  overflow: hidden;
+`);
+
+export const workspaceHeader = styled(listHeaderNoWrap, `
+  font-size: 24px;
+  font-weight: 500;
 `);
 
 export const templatesHeaderWrap = styled('div', `
@@ -60,7 +83,7 @@ export const templatesHeaderWrap = styled('div', `
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 24px;
+  margin: 16px 0px 24px 0px;
 
   @media ${mediaSmall} {
     & {
@@ -75,11 +98,24 @@ export const templatesHeader = styled(listHeader, `
 `);
 
 export const featuredTemplatesHeader = styled(docListHeader, `
+  margin-top: 16px;
   display: flex;
   align-items: center;
 `);
 
 export const otherSitesHeader = templatesHeader;
+
+export const STICKY_HEADER_HEIGHT_PX = 76;
+
+export const stickyHeader = styled(headerWrap, `
+  height: ${STICKY_HEADER_HEIGHT_PX}px;
+  position: sticky;
+  top: 0px;
+  background-color: ${theme.mainPanelBg};
+  z-index: ${vars.stickyHeaderZIndex};
+  margin-bottom: 0px;
+  padding: 16px 0px 24px 0px;
+`);
 
 export const allDocsTemplates = styled('div', `
   display: flex;
@@ -122,6 +158,14 @@ export const siteButton = styled(bigBasicButton, `
 export const docHeaderIcon = styled(icon, `
   margin-right: 8px;
   margin-top: -3px;
+  --icon-color: ${theme.lightText};
+`);
+
+export const workspaceHeaderIcon = styled(icon, `
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin-right: 16px;
   --icon-color: ${theme.lightText};
 `);
 
@@ -179,7 +223,7 @@ export const docRowWrapper = styled('div', `
   color: ${theme.text};
   --icon-color: ${theme.lightText};
 
-  &:hover, &.weasel-popup-open, &-renaming {
+  &:hover, &.weasel-popup-open {
     background-color: ${theme.hover};
   }
 `);
@@ -357,4 +401,14 @@ export const upgradeButton = styled('div', `
 
 export const upgradeCard = styled('div', `
   margin-left: 64px;
+`);
+
+export const paragraph = styled(docBlock, `
+  color: ${theme.text};
+  line-height: 1.6;
+`);
+
+export const introLine = styled(paragraph, `
+  font-size: ${vars.introFontSize};
+  margin-bottom: 8px;
 `);

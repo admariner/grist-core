@@ -16,7 +16,8 @@ export interface ColumnToMap {
    */
   description?: string|null,
   /**
-   * Column type, by default ANY.
+   * Column types (as comma separated list), by default "Any", what means that any type is
+   * allowed (unless strictType is true).
    */
   type?: string, // GristType, TODO: ts-interface-checker doesn't know how to parse this
   /**
@@ -27,8 +28,16 @@ export interface ColumnToMap {
    * Allow multiple column assignment, the result will be list of mapped table column names.
    */
   allowMultiple?: boolean,
+  /**
+   * Match column type strictly, so "Any" will require "Any" and not any other type.
+   */
+  strictType?: boolean,
 }
 
+/**
+ * Tells Grist what columns a Custom Widget expects and allows users to map between existing column names
+ * and those requested by the Custom Widget.
+ */
 export type ColumnsToMap = (string|ColumnToMap)[];
 
 /**
@@ -50,6 +59,10 @@ export interface InteractionOptionsRequest {
    * and those requested by Custom Widget.
    */
   columns?: ColumnsToMap,
+  /**
+   * Show widget as linking source.
+   */
+  allowSelectBy?: boolean,
 }
 
 /**
@@ -59,7 +72,7 @@ export interface InteractionOptions{
   /**
    * Granted access level.
    */
-   accessLevel: string,
+  accessLevel: string,
 }
 
 /**
@@ -69,6 +82,9 @@ export interface WidgetColumnMap {
   [key: string]: string|string[]|null
 }
 
+/**
+ * Interface for the mapping of a custom widget.
+ */
 export interface CustomSectionAPI {
   /**
    * Initial request from a Custom Widget that wants to declare its requirements.

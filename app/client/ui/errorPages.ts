@@ -1,13 +1,13 @@
 import {makeT} from 'app/client/lib/localization';
 import {AppModel} from 'app/client/models/AppModel';
-import {getLoginUrl, getMainOrgUrl, urlState} from 'app/client/models/gristUrlState';
+import {getLoginUrl, getMainOrgUrl, getSignupUrl, urlState} from 'app/client/models/gristUrlState';
 import {AppHeader} from 'app/client/ui/AppHeader';
 import {leftPanelBasic} from 'app/client/ui/LeftPanelCommon';
 import {pagePanels} from 'app/client/ui/PagePanels';
 import {createTopBarHome} from 'app/client/ui/TopBar';
 import {bigBasicButtonLink, bigPrimaryButtonLink} from 'app/client/ui2018/buttons';
 import {theme, vars} from 'app/client/ui2018/cssVars';
-import {getPageTitleSuffix, GristLoadConfig} from 'app/common/gristUrls';
+import {commonUrls, getPageTitleSuffix} from 'app/common/gristUrls';
 import {getGristConfig} from 'app/common/urlUtils';
 import {dom, DomElementArg, makeTestId, observable, styled} from 'grainjs';
 
@@ -15,13 +15,20 @@ const testId = makeTestId('test-');
 
 const t = makeT('errorPages');
 
+function signInAgainButton() {
+  return cssButtonWrap(bigPrimaryButtonLink(
+    t("Sign in again"), {href: getLoginUrl()}, testId('error-signin')
+  ));
+}
+
 export function createErrPage(appModel: AppModel) {
-  const gristConfig: GristLoadConfig = (window as any).gristConfig || {};
-  const message = gristConfig.errMessage;
-  return gristConfig.errPage === 'signed-out' ? createSignedOutPage(appModel) :
-    gristConfig.errPage === 'not-found' ? createNotFoundPage(appModel, message) :
-    gristConfig.errPage === 'access-denied' ? createForbiddenPage(appModel, message) :
-    createOtherErrorPage(appModel, message);
+  const {errMessage, errPage} = getGristConfig();
+  return errPage === 'signed-out' ? createSignedOutPage(appModel) :
+    errPage === 'not-found' ? createNotFoundPage(appModel, errMessage) :
+    errPage === 'access-denied' ? createForbiddenPage(appModel, errMessage) :
+    errPage === 'account-deleted' ? createAccountDeletedPage(appModel) :
+    errPage === 'signin-failed' ? createSigninFailedPage(appModel, errMessage) :
+    createOtherErrorPage(appModel, errMessage);
 }
 
 /**
@@ -61,8 +68,20 @@ export function createSignedOutPage(appModel: AppModel) {
 
   return pagePanelsError(appModel, t("Signed out{{suffix}}", {suffix: ''}), [
     cssErrorText(t("You are now signed out.")),
+    signInAgainButton(),
+  ]);
+}
+
+/**
+ * Creates a page that shows the user is logged out.
+ */
+export function createAccountDeletedPage(appModel: AppModel) {
+  document.title = t("Account deleted{{suffix}}", {suffix: getPageTitleSuffix(getGristConfig())});
+
+  return pagePanelsError(appModel, t("Account deleted{{suffix}}", {suffix: ''}), [
+    cssErrorText(t("Your account has been deleted.")),
     cssButtonWrap(bigPrimaryButtonLink(
-      t("Sign in again"), {href: getLoginUrl()}, testId('error-signin')
+      t("Sign up"), {href: getSignupUrl()}, testId('error-signin')
     ))
   ]);
 }
@@ -80,7 +99,19 @@ export function createNotFoundPage(appModel: AppModel, message?: string) {
     })),
     cssButtonWrap(bigPrimaryButtonLink(t("Go to main page"), testId('error-primary-btn'),
       urlState().setLinkUrl({}))),
-    cssButtonWrap(bigBasicButtonLink(t("Contact support"), {href: 'https://getgrist.com/contact'})),
+    cssButtonWrap(bigBasicButtonLink(t("Contact support"), {href: commonUrls.contactSupport})),
+  ]);
+}
+
+export function createSigninFailedPage(appModel: AppModel, message?: string) {
+  document.title = t("Sign-in failed{{suffix}}", {suffix: getPageTitleSuffix(getGristConfig())});
+  return pagePanelsError(appModel, t("Sign-in failed{{suffix}}", {suffix: ''}), [
+    cssErrorText(message ??
+      t("Failed to log in.{{separator}}Please try again or contact support.", {
+        separator: dom('br')
+    })),
+    signInAgainButton(),
+    cssButtonWrap(bigBasicButtonLink(t("Contact support"), {href: commonUrls.contactSupport})),
   ]);
 }
 
@@ -95,7 +126,7 @@ export function createOtherErrorPage(appModel: AppModel, message?: string) {
       t('There was an unknown error.')),
     cssButtonWrap(bigPrimaryButtonLink(t("Go to main page"), testId('error-primary-btn'),
       urlState().setLinkUrl({}))),
-    cssButtonWrap(bigBasicButtonLink(t("Contact support"), {href: 'https://getgrist.com/contact'})),
+    cssButtonWrap(bigBasicButtonLink(t("Contact support"), {href: commonUrls.contactSupport})),
   ]);
 }
 

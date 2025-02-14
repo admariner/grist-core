@@ -5,6 +5,8 @@ and starts the grist sandbox. See engine.py for the API documentation.
 import os
 import random
 import sys
+
+from timing import DummyTiming, Timing
 sys.path.append('thirdparty')
 # pylint: disable=wrong-import-position
 
@@ -21,7 +23,7 @@ import migrations
 import schema
 import useractions
 import objtypes
-from acl_formula import parse_acl_formula
+from predicate_formula import parse_predicate_formula
 from sandbox import get_default_sandbox
 from imports.register import register_import_parsers
 
@@ -146,8 +148,9 @@ def run(sandbox):
     return objtypes.encode_object(eng.get_formula_error(table_id, col_id, row_id))
 
   @export
-  def get_formula_prompt(table_id, col_id, description):
-    return formula_prompt.get_formula_prompt(eng, table_id, col_id, description)
+  def get_formula_prompt(table_id, col_id, description, include_all_tables=True, lookups=True):
+    return formula_prompt.get_formula_prompt(eng, table_id, col_id, description,
+                                             include_all_tables, lookups)
 
   @export
   def convert_formula_completion(completion):
@@ -157,7 +160,21 @@ def run(sandbox):
   def evaluate_formula(table_id, col_id, row_id):
     return formula_prompt.evaluate_formula(eng, table_id, col_id, row_id)
 
-  export(parse_acl_formula)
+  @export
+  def start_timing():
+    eng._timing = Timing()
+
+  @export
+  def stop_timing():
+    stats = eng._timing.get()
+    eng._timing = DummyTiming()
+    return stats
+
+  @export
+  def get_timings():
+    return eng._timing.get(False)
+
+  export(parse_predicate_formula)
   export(eng.load_empty)
   export(eng.load_done)
 

@@ -4,7 +4,7 @@ import * as gu from 'test/nbrowser/gristUtils';
 import {server, setupTestSuite} from 'test/nbrowser/testUtils';
 
 describe('SelectByRefList', function() {
-  this.timeout(80000);
+  this.timeout(90000);
   setupTestSuite();
   addToRepl('gu2', gu);
   gu.bigScreen();
@@ -106,10 +106,9 @@ describe('SelectByRefList', function() {
       ],
     ];
     // LINKTARGET is being filtered by the `id` column
-    // There's no column to set a default value for that would help
-    // The newly added row disappears immediately
+    // There's no column to set a default value for.
     // TODO should we be appending the new row ID to the reflist in the source table?
-    newRow = ['', '', ''];
+    newRow = ['99', '', ''];
     await checkSelectingRecords('REFLISTS • LinkTarget_reflist', sourceData, newRow);
 
     // Similar to the above but indirect. We connect LINKTARGET.ref and REFLISTS.reflist,
@@ -183,7 +182,12 @@ async function checkSelectingRecords(selectBy: string, sourceData: string[][], n
   await gu.waitForServer();
 
   const selectByTable = selectBy.split(' ')[0];
-  await gu.getCell({section: selectByTable, col: 0, rowNum: 3}).click();
+  const cell = await gu.getCell({section: selectByTable, col: 0, rowNum: 3});
+  if (selectByTable === 'REFLISTS') {
+    await gu.clickReferenceListCell(cell);
+  } else {
+    await cell.click();
+  }
 
   let numSourceRows = 0;
 
@@ -207,7 +211,12 @@ async function checkSelectingRecords(selectBy: string, sourceData: string[][], n
   }
 
   for (let i = 0; i < sourceData.length; i++) {
-    await gu.getCell({section: selectByTable, col: 0, rowNum: i + 1}).click();
+    const cell = await gu.getCell({section: selectByTable, col: 0, rowNum: i + 1});
+    if (selectByTable === 'REFLISTS') {
+      await gu.clickReferenceListCell(cell);
+    } else {
+      await cell.click();
+    }
     await checkSourceGroup(i);
   }
 

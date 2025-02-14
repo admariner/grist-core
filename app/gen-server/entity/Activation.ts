@@ -22,6 +22,19 @@ export class Activation extends BaseEntity {
   @Column({name: 'updated_at', default: () => "CURRENT_TIMESTAMP"})
   public updatedAt: Date;
 
+  // When the enterprise activation was first enabled, so we know when
+  // to start counting the trial date.
+  //
+  // Activations are created at Grist installation to track other
+  // things such as prefs, but the user might not enable Enterprise
+  // until later.
+  @Column({name: 'enabled_at', type: nativeValues.dateTimeType, nullable: true})
+  public enabledAt: Date|null;
+
+  // When this installation entered into grace period, due to key expiration or limits exceeded.
+  @Column({name: 'grace_period_start', type: nativeValues.dateTimeType, nullable: true})
+  public gracePeriodStart: Date|null;
+
   public checkProperties(props: any): props is Partial<InstallProperties> {
     for (const key of Object.keys(props)) {
       if (!installPropertyKeys.includes(key)) {

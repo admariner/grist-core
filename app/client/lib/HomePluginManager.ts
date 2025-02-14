@@ -13,9 +13,12 @@ export class HomePluginManager {
 
   public pluginsList: PluginInstance[];
 
-  constructor(localPlugins: LocalPlugin[],
-              _untrustedContentOrigin: string,
-              _clientScope: ClientScope) {
+  constructor(options: {
+    localPlugins: LocalPlugin[],
+    untrustedContentOrigin: string,
+    clientScope: ClientScope,
+  }) {
+    const {localPlugins, untrustedContentOrigin, clientScope} = options;
     this.pluginsList = [];
     for (const plugin of localPlugins) {
       try {
@@ -30,8 +33,12 @@ export class HomePluginManager {
           continue;
         }
         const pluginInstance = new PluginInstance(plugin, createRpcLogger(console, `HOME PLUGIN ${plugin.id}:`));
-        const safeBrowser = pluginInstance.safeBrowser = new SafeBrowser(pluginInstance,
-          _clientScope, _untrustedContentOrigin, components.safeBrowser);
+        const safeBrowser = pluginInstance.safeBrowser = new SafeBrowser({
+          pluginInstance,
+          clientScope,
+          untrustedContentOrigin,
+          mainPath: components.safeBrowser,
+        });
         if (components.safeBrowser) {
           pluginInstance.rpc.registerForwarder(components.safeBrowser, safeBrowser);
         }
